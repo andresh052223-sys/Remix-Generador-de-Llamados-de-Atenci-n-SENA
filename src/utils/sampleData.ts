@@ -6,6 +6,7 @@ export const INITIAL_GENERAL_INFO: GeneralInfo = {
   centroFormacion: 'Centro de Comercio y Servicios Regional Tolima',
   modalidad: 'Virtual',
   nombreInstructorAsignado: 'Andres Arturo Huertas Carreño',
+  transversal: 'Transversal Inglés',
   nombreInstructorLlamado: 'Andres Arturo Huertas Carreño',
   fechaEntregaLlamado: new Date().toISOString().split('T')[0],
   fechaLimiteEvidencias: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -16,6 +17,11 @@ export const INITIAL_GENERAL_INFO: GeneralInfo = {
     'RAP2 INTERCAMBIAR OPINIONES SOBRE SITUACIONES COTIDIANAS Y LABORALES ACTUALES, PASADAS Y FUTURAS EN CONTEXTOS SOCIALES ORALES Y ESCRITOS. 96 H'
   ],
   observacionesAprendiz: '',
+  planMejoramientoActivo: true,
+  planMejoramientoTipo: 'Académico',
+  planMejoramientoDescripcion: 'El aprendiz deberá desarrollar y entregar la totalidad de las evidencias identificadas como NO o en estado de corrección en este documento, atendiendo a los criterios de evaluación y especificaciones de la guía de aprendizaje en la plataforma institucional.',
+  planMejoramientoFechaLimite: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  planMejoramientoCompromiso: 'El aprendiz se compromete a cumplir a cabalidad con las actividades concertadas en las fechas indicadas. El incumplimiento injustificado dará lugar al traslado del caso al Comité de Evaluación y Seguimiento según el Reglamento del Aprendiz SENA.',
   juicioTexto: 'Para superar los resultados de aprendizaje a evaluar debe aprobar todas las evidencias',
   juicioResultado: 'NO_APROBO',
   codigoDocumento: '',
@@ -29,49 +35,56 @@ export const INITIAL_EVIDENCES: EvidenceItem[] = [
     numero: 1,
     nombre: 'Evidencia GA1-240202501-AA1-EV01. Cuestionario.',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 0
   },
   {
     id: 'ev-2',
     numero: 2,
     nombre: 'Evidencia GA1-240202501-AA1-EV02. Video presentación.',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 0
   },
   {
     id: 'ev-3',
     numero: 3,
     nombre: 'Evidencia GA1-240202501-AA1-EV03. Folleto.',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 0
   },
   {
     id: 'ev-4',
     numero: 4,
     nombre: 'GA2-240202501-AA1-EV01. Cuestionario.',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 1
   },
   {
     id: 'ev-5',
     numero: 5,
     nombre: 'GA2-240202501-AA1-EV02. Video entrevista virtual.',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 1
   },
   {
     id: 'ev-6',
     numero: 6,
     nombre: 'Evidencia GA2-240202501-AA1-EV03. Crónica.',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 1
   },
   {
     id: 'ev-7',
     numero: 7,
     nombre: 'Cuestionario. GA2-240202501-AA2-EV01',
     defaultEstado: 'NO',
-    observacion: ''
+    observacion: '',
+    rapIndex: 1
   }
 ];
 

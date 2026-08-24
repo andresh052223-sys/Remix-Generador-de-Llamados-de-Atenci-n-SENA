@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Apprentice, EvidenceItem, EvidenceStatus } from '../types';
+import { Apprentice, EvidenceItem, EvidenceStatus, GeneralInfo } from '../types';
 import { exportEvidenceMatrixExcel, parseExcelMatrix, ParsedExcelResult } from '../utils/excelParser';
 import { ExcelImportModal } from './ExcelImportModal';
 import { NameFormatModal } from './NameFormatModal';
 import { parseFullName, normalizeSortKey } from '../utils/nameUtils';
+import { evaluateApprenticeRaps, getRapShortTitle, ApprenticeRapSummary } from '../utils/rapUtils';
 import {
   TableProperties,
   Check,
@@ -26,7 +27,9 @@ import {
   Clock,
   ArrowDownAZ,
   ArrowUpZA,
-  UserCheck
+  UserCheck,
+  BookOpen,
+  Award
 } from 'lucide-react';
 
 interface EvidenceMatrixViewProps {
@@ -34,6 +37,7 @@ interface EvidenceMatrixViewProps {
   setApprentices: React.Dispatch<React.SetStateAction<Apprentice[]>>;
   evidences: EvidenceItem[];
   setEvidences: React.Dispatch<React.SetStateAction<EvidenceItem[]>>;
+  generalInfo?: GeneralInfo;
   onSelectApprenticeForPreview: (apprentice: Apprentice) => void;
   onNavigateToTab?: (tab: any) => void;
 }
@@ -45,11 +49,12 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
   setApprentices,
   evidences,
   setEvidences,
+  generalInfo,
   onSelectApprenticeForPreview,
   onNavigateToTab
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'CORREGIR' | 'NO' | 'SI'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [sortOrder, setSortOrder] = useState<MatrixSortMode>('NONE');
   
   // Excel upload
@@ -70,6 +75,8 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
     currentStatus: EvidenceStatus;
   } | null>(null);
 
+  const rapsList = generalInfo?.resultadosAprendizaje || [];
+
   // Helper to get apprentice's status for an evidence
   const getStatus = (app: Apprentice, evId: string): EvidenceStatus => {
     if (app.evidenciasStatus && app.evidenciasStatus[evId] !== undefined) {
@@ -78,6 +85,49 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
     const ev = evidences.find((e) => e.id === evId);
     return ev?.defaultEstado || 'NO';
   };
+
+  // Map of apprentice id to evaluated RAPs
+  const apprenticeRapsMap = useMemo(() => {
+    const map = new Map<string, ApprenticeRapSummary>();
+    if (!generalInfo) return map;
+    apprentices.forEach((app) => {
+      map.set(app.id, evaluateApprenticeRaps(app, generalInfo, evidences));
+    });
+    return map;
+  }, [apprentices, generalInfo, evidences]);
+
+  // Global RAP approval statistics
+  const rapGlobalStats = useMemo(() => {
+    return rapsList.map((rapText, idx) => {
+      const title = getRapShortTitle(rapText, idx);
+      const assigned = evidences.filter((e) => e.rapIndex === idx);
+      let approvedCount = 0;
+      let pendingCount = 0;
+
+      apprentices.forEach((app) => {
+        const evalSummary = apprenticeRapsMap.get(app.id);
+        const rapEval = evalSummary?.raps[idx];
+        if (rapEval?.isApproved) {
+          approvedCount++;
+        } else {
+          pendingCount++;
+        }
+      });
+
+      const total = apprentices.length;
+      const percentage = total > 0 ? Math.round((approvedCount / total) * 100) : 0;
+
+      return {
+        idx,
+        title,
+        text: rapText,
+        assignedEvidencesCount: assigned.length,
+        approvedCount,
+        pendingCount,
+        percentage
+      };
+    });
+  }, [rapsList, evidences, apprentices, apprenticeRapsMap]);
 
   // Cycle status on single cell click: SI -> CORREGIR -> NO -> SI
   const handleCycleCellStatus = (apprenticeId: string, evidenceId: string) => {
@@ -230,9 +280,24 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
       if (statusFilter === 'SI') {
         return appStatuses.every((s) => s === 'SI');
       }
+
+      // RAP specific filters
+      if (statusFilter.startsWith('RAP_')) {
+        const parts = statusFilter.split('_');
+        const rapIdx = parseInt(parts[1], 10);
+        const filterType = parts[2]; // 'APROBO' or 'NO'
+        const evalSummary = apprenticeRapsMap.get(app.id);
+        const rapEval = evalSummary?.raps[rapIdx];
+        if (filterType === 'APROBO') {
+          return rapEval?.isApproved === true;
+        } else {
+          return rapEval?.isApproved === false;
+        }
+      }
+
       return true;
     });
-  }, [sortedApprentices, searchTerm, statusFilter, evidences]);
+  }, [sortedApprentices, searchTerm, statusFilter, evidences, apprenticeRapsMap]);
 
   // Matrix stats
   const stats = useMemo(() => {
@@ -304,17 +369,18 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
                   Panel de Calificaciones & Seguimiento
                 </span>
                 <span className="text-[10px] font-bold text-slate-500">
-                  {apprentices.length} Aprendices • {evidences.length} Evidencias
+                  {apprentices.length} Aprendices • {evidences.length} Evidencias {rapsList.length > 0 && `• ${rapsList.length} RAPs`}
                 </span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-black mt-1">
-                Matriz de Aprendices y Evidencias
+                Matriz de Aprendices y Resultados de Aprendizaje
               </h2>
               <p className="text-xs font-semibold text-slate-700 max-w-2xl mt-0.5">
                 Haga clic directamente sobre cualquier casilla para alternar entre{' '}
-                <span className="bg-emerald-300 text-black px-1 py-0.2 font-black border border-black text-[11px]">SI (Aprobó)</span>,{' '}
+                <span className="bg-[#a9d18e] text-black px-1 py-0.2 font-black border border-black text-[11px]">SI (Aprobó)</span>,{' '}
                 <span className="bg-white text-black px-1 py-0.2 font-black border border-black text-[11px]">CORREGIR</span> o{' '}
                 <span className="bg-rose-200 text-rose-950 px-1 py-0.2 font-black border border-rose-400 text-[11px]">NO (No Aprobó)</span>.
+                Los Resultados de Aprendizaje (RAPs) se calculan automáticamente según las evidencias asignadas.
               </p>
             </div>
           </div>
@@ -402,6 +468,83 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Learning Outcomes (RAPs) Dynamic Overview Banner */}
+        {rapsList.length > 0 && (
+          <div className="mt-4 p-4 bg-slate-50 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-black flex items-center gap-1.5">
+                <Award className="h-4 w-4 text-emerald-700" />
+                Estado Global de Resultados de Aprendizaje ({rapsList.length} RAPs):
+              </span>
+              <span className="text-[10px] text-slate-500 font-bold">
+                Un RAP se aprueba cuando el aprendiz tiene 'SI' en todas sus evidencias asociadas.
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {rapGlobalStats.map((rap) => (
+                <div
+                  key={rap.idx}
+                  className="p-3 bg-white border-2 border-black flex flex-col justify-between gap-2"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="px-2 py-0.5 bg-black text-white font-black text-[10px] uppercase">
+                        {rap.title}
+                      </span>
+                      <span className="text-[11px] font-black text-emerald-800 font-mono">
+                        {rap.approvedCount} de {apprentices.length} Aprobados ({rap.percentage}%)
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-800 line-clamp-2 font-medium" title={rap.text}>
+                      {rap.text}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.5 font-bold">
+                        {rap.approvedCount} Aprobó
+                      </span>
+                      <span className="bg-rose-100 text-rose-900 border border-rose-300 px-1.5 py-0.5 font-bold">
+                        {rap.pendingCount} No Aprobó
+                      </span>
+                      <span className="text-slate-500">
+                        ({rap.assignedEvidencesCount} {rap.assignedEvidencesCount === 1 ? 'evidencia' : 'evidencias'})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter(statusFilter === `RAP_${rap.idx}_APROBO` ? 'ALL' : `RAP_${rap.idx}_APROBO`)}
+                        className={`text-[9px] font-black uppercase px-1.5 py-0.5 border ${
+                          statusFilter === `RAP_${rap.idx}_APROBO`
+                            ? 'bg-emerald-400 text-black border-black'
+                            : 'text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                        }`}
+                      >
+                        Ver Aprobados
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter(statusFilter === `RAP_${rap.idx}_NO` ? 'ALL' : `RAP_${rap.idx}_NO`)}
+                        className={`text-[9px] font-black uppercase px-1.5 py-0.5 border ${
+                          statusFilter === `RAP_${rap.idx}_NO`
+                            ? 'bg-rose-300 text-black border-black'
+                            : 'text-rose-800 border-rose-300 hover:bg-rose-50'
+                        }`}
+                      >
+                        Ver Pendientes
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Excel Workflow Helper Banner */}
         <div className="mt-4 p-3 bg-emerald-50/80 border-2 border-emerald-600 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
@@ -589,47 +732,70 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
                   </div>
                 </th>
 
-                {/* EVIDENCIAS (Header per Evidence) */}
-                {evidences.map((ev, evIdx) => (
-                  <th
-                    key={ev.id}
-                    className="p-2.5 border-r-2 border-black bg-slate-50 text-center font-black uppercase text-[10px] min-w-[130px] max-w-[170px]"
-                  >
-                    <div className="space-y-1">
-                      <div className="font-bold text-slate-900 line-clamp-2" title={ev.nombre}>
-                        #{ev.numero}. {ev.nombre}
-                      </div>
+                {/* EVIDENCIAS (Header per Evidence with RAP tag) */}
+                {evidences.map((ev, evIdx) => {
+                  const assignedRap = ev.rapIndex !== undefined && rapsList[ev.rapIndex]
+                    ? getRapShortTitle(rapsList[ev.rapIndex], ev.rapIndex)
+                    : null;
 
-                      {/* Column Batch Quick Toggles */}
-                      <div className="flex items-center justify-center gap-1 pt-1 border-t border-slate-300">
-                        <button
-                          type="button"
-                          onClick={() => handleSetColumnStatus(ev.id, 'SI')}
-                          className="px-1 py-0.2 text-[8px] font-black bg-emerald-300 hover:bg-emerald-400 text-black border border-black"
-                          title={`Marcar toda la Evidencia #${ev.numero} como SI`}
-                        >
-                          SI
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetColumnStatus(ev.id, 'CORREGIR')}
-                          className="px-1 py-0.2 text-[8px] font-black bg-white hover:bg-slate-200 text-black border border-black"
-                          title={`Marcar toda la Evidencia #${ev.numero} como CORREGIR`}
-                        >
-                          CORR
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSetColumnStatus(ev.id, 'NO')}
-                          className="px-1 py-0.2 text-[8px] font-black bg-rose-200 hover:bg-rose-300 text-rose-900 border border-rose-400"
-                          title={`Marcar toda la Evidencia #${ev.numero} como NO`}
-                        >
-                          NO
-                        </button>
+                  return (
+                    <th
+                      key={ev.id}
+                      className="p-2.5 border-r-2 border-black bg-slate-50 text-center font-black uppercase text-[10px] min-w-[130px] max-w-[170px]"
+                    >
+                      <div className="space-y-1">
+                        {assignedRap && (
+                          <span className="inline-block px-1.5 py-0.2 bg-emerald-200 text-emerald-950 border border-black font-black text-[9px]">
+                            {assignedRap}
+                          </span>
+                        )}
+                        <div className="font-bold text-slate-900 line-clamp-2" title={ev.nombre}>
+                          #{ev.numero}. {ev.nombre}
+                        </div>
+
+                        {/* Column Batch Quick Toggles */}
+                        <div className="flex items-center justify-center gap-1 pt-1 border-t border-slate-300">
+                          <button
+                            type="button"
+                            onClick={() => handleSetColumnStatus(ev.id, 'SI')}
+                            className="px-1 py-0.2 text-[8px] font-black bg-emerald-300 hover:bg-emerald-400 text-black border border-black"
+                            title={`Marcar toda la Evidencia #${ev.numero} como SI`}
+                          >
+                            SI
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetColumnStatus(ev.id, 'CORREGIR')}
+                            className="px-1 py-0.2 text-[8px] font-black bg-white hover:bg-slate-200 text-black border border-black"
+                            title={`Marcar toda la Evidencia #${ev.numero} como CORREGIR`}
+                          >
+                            CORR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetColumnStatus(ev.id, 'NO')}
+                            className="px-1 py-0.2 text-[8px] font-black bg-rose-200 hover:bg-rose-300 text-rose-900 border border-rose-400"
+                            title={`Marcar toda la Evidencia #${ev.numero} como NO`}
+                          >
+                            NO
+                          </button>
+                        </div>
                       </div>
+                    </th>
+                  );
+                })}
+
+                {/* Learning Outcomes (RAPs) Column Header */}
+                {rapsList.length > 0 && (
+                  <th className="p-2.5 border-r-2 border-black bg-emerald-50 text-center font-black uppercase text-[10px] min-w-[200px]">
+                    <div className="flex flex-col items-center justify-center gap-0.5">
+                      <span className="text-[8px] text-emerald-800 bg-emerald-200 px-1 py-0.2 font-black border border-emerald-400">
+                        EVALUACIÓN RAPs
+                      </span>
+                      <span>Resultados de Aprendizaje</span>
                     </div>
                   </th>
-                ))}
+                )}
 
                 {/* Row Summary / Actions */}
                 <th className="p-3 bg-slate-100 text-center font-black uppercase text-[10px] w-28 shrink-0">
@@ -648,6 +814,11 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
                     ENTREGÓ / APROBÓ
                   </td>
                 ))}
+                {rapsList.length > 0 && (
+                  <td className="p-1 border-r-2 border-black text-center font-mono text-emerald-900 bg-emerald-100/60">
+                    APROBÓ / NO APROBÓ
+                  </td>
+                )}
                 <td className="p-1 text-center">ESTADO</td>
               </tr>
             </thead>
@@ -656,7 +827,7 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
             <tbody className="divide-y-2 divide-black font-sans">
               {displayedApprentices.length === 0 ? (
                 <tr>
-                  <td colSpan={evidences.length + 3} className="p-8 text-center bg-slate-50">
+                  <td colSpan={evidences.length + (rapsList.length > 0 ? 4 : 3)} className="p-8 text-center bg-slate-50">
                     <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
                     <div className="font-black uppercase text-sm text-slate-800">
                       No se encontraron aprendices con el filtro actual
@@ -672,7 +843,7 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
                   const countSi = appStatuses.filter((s) => s === 'SI').length;
                   const countCorregir = appStatuses.filter((s) => s === 'CORREGIR').length;
                   const countNo = appStatuses.filter((s) => s === 'NO').length;
-                  const isAllApproved = countSi === evidences.length && evidences.length > 0;
+                  const evalSummary = apprenticeRapsMap.get(app.id);
 
                   return (
                     <tr
@@ -776,6 +947,38 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
                           </td>
                         );
                       })}
+
+                      {/* Learning Outcomes (RAPs) Evaluation Breakdown Cell */}
+                      {rapsList.length > 0 && (
+                        <td className="p-2 border-r-2 border-black bg-slate-50/60 align-middle">
+                          <div className="flex flex-col gap-1">
+                            {evalSummary?.raps.map((rapEval) => {
+                              return (
+                                <div
+                                  key={rapEval.rapIndex}
+                                  className="flex items-center justify-between gap-1 text-[9.5px] font-black"
+                                >
+                                  <span className="font-mono text-slate-700">{rapEval.rapTitle}:</span>
+                                  {rapEval.isApproved ? (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-[#a9d18e] text-black border border-black">
+                                      <Check className="h-2.5 w-2.5 stroke-[3]" /> APROBÓ
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-rose-200 text-rose-950 border border-rose-400 cursor-help"
+                                      title={`Evidencias pendientes: ${
+                                        rapEval.pendingEvidences.map((e) => `#${e.numero}`).join(', ') || 'Ninguna'
+                                      }`}
+                                    >
+                                      <X className="h-2.5 w-2.5 stroke-[3]" /> NO APROBÓ ({rapEval.pendingEvidences.length} pend.)
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      )}
 
                       {/* Row Summary Pill & View PDF CTA */}
                       <td className="p-2 text-center bg-slate-50">

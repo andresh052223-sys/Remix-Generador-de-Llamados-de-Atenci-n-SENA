@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { EvidenceItem } from '../types';
-import { Plus, Trash2, ArrowUp, ArrowDown, ClipboardList, Check, ArrowRight, AlertCircle, Layers } from 'lucide-react';
+import { EvidenceItem, GeneralInfo } from '../types';
+import { Plus, Trash2, ArrowUp, ArrowDown, ClipboardList, Check, ArrowRight, AlertCircle, Layers, BookOpen, Filter } from 'lucide-react';
+import { getRapShortTitle } from '../utils/rapUtils';
 
 interface EvidenceManagerProps {
   evidences: EvidenceItem[];
   setEvidences: React.Dispatch<React.SetStateAction<EvidenceItem[]>>;
+  generalInfo?: GeneralInfo;
   onContinue: () => void;
   onBack: () => void;
 }
@@ -12,13 +14,18 @@ interface EvidenceManagerProps {
 export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
   evidences,
   setEvidences,
+  generalInfo,
   onContinue,
   onBack
 }) => {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkText, setBulkText] = useState('');
+  const [bulkTargetRap, setBulkTargetRap] = useState<number | undefined>(undefined);
+  const [rapFilter, setRapFilter] = useState<number | 'ALL'>('ALL');
 
-  const handleAddRow = () => {
+  const raps = generalInfo?.resultadosAprendizaje || [];
+
+  const handleAddRow = (specificRapIndex?: number) => {
     const nextNum = evidences.length + 1;
     const newId = `ev-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
     setEvidences((prev) => [
@@ -28,7 +35,8 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
         numero: nextNum,
         nombre: `Evidencia GA1-240202501-AA1-EV0${nextNum}. Actividad de aprendizaje.`,
         defaultEstado: 'NO',
-        observacion: ''
+        observacion: '',
+        rapIndex: specificRapIndex !== undefined ? specificRapIndex : (raps.length > 0 ? 0 : undefined)
       }
     ]);
   };
@@ -77,7 +85,8 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
         numero: idx + 1,
         nombre: cleanName || line,
         defaultEstado: 'NO',
-        observacion: ''
+        observacion: '',
+        rapIndex: bulkTargetRap
       };
     });
 
@@ -85,6 +94,11 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
     setShowBulkModal(false);
     setBulkText('');
   };
+
+  const filteredEvidences = evidences.filter((ev) => {
+    if (rapFilter === 'ALL') return true;
+    return ev.rapIndex === rapFilter;
+  });
 
   return (
     <div className="space-y-6">
@@ -95,10 +109,10 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
             Paso 2 de 4 • Matriz de Evidencias
           </span>
           <h2 className="text-2xl font-black uppercase tracking-tight text-black">
-            Evidencias y Actividades del Llamado
+            Evidencias y Resultados de Aprendizaje
           </h2>
           <p className="text-xs text-slate-600 mt-1 max-w-2xl font-medium">
-            Defina las evidencias pendientes o evaluadas. Se incluirán exactamente las evidencias reales en el formato oficial SENA, sin espacios en blanco ni filas vacías.
+            Organice y asigne cada evidencia al Resultado de Aprendizaje (RAP) correspondiente. Esto permitirá evaluar y reflejar con exactitud qué RAPs aprueba o reprueba cada aprendiz.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -114,7 +128,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
           <button
             id="add-evidence-top-btn"
             type="button"
-            onClick={handleAddRow}
+            onClick={() => handleAddRow(rapFilter !== 'ALL' ? rapFilter : undefined)}
             className="flex items-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider text-black bg-emerald-400 hover:bg-emerald-500 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
           >
             <Plus className="h-4 w-4" />
@@ -123,12 +137,89 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
         </div>
       </div>
 
+      {/* RAP Organization Summary Cards */}
+      {raps.length > 0 && (
+        <div className="bg-slate-50 border-2 border-black p-4 space-y-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-black flex items-center gap-1.5">
+              <BookOpen className="h-4 w-4 text-emerald-600" />
+              Asignación por Resultados de Aprendizaje ({raps.length} RAPs definidos):
+            </span>
+            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-600">
+              <span>Filtrar tabla:</span>
+              <button
+                type="button"
+                onClick={() => setRapFilter('ALL')}
+                className={`px-2 py-0.5 border border-black uppercase ${rapFilter === 'ALL' ? 'bg-black text-white' : 'bg-white text-black hover:bg-slate-200'}`}
+              >
+                Todos ({evidences.length})
+              </button>
+              {raps.map((rap, idx) => {
+                const count = evidences.filter((e) => e.rapIndex === idx).length;
+                const title = getRapShortTitle(rap, idx);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setRapFilter(idx)}
+                    className={`px-2 py-0.5 border border-black uppercase ${rapFilter === idx ? 'bg-emerald-400 text-black font-black' : 'bg-white text-black hover:bg-slate-200'}`}
+                  >
+                    {title} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {raps.map((rap, idx) => {
+              const assigned = evidences.filter((e) => e.rapIndex === idx);
+              const title = getRapShortTitle(rap, idx);
+              return (
+                <div
+                  key={idx}
+                  className={`p-3 border-2 border-black bg-white flex flex-col justify-between gap-2 transition ${
+                    rapFilter === idx ? 'ring-2 ring-emerald-500 bg-emerald-50/40' : ''
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-black px-2 py-0.5 bg-emerald-300 text-black border border-black uppercase">
+                        {title}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-slate-700">
+                        {assigned.length === 1 ? '1 evidencia asignada' : `${assigned.length} evidencias asignadas`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-800 line-clamp-2 font-medium" title={rap}>
+                      {rap}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-[10px]">
+                    <span className="text-slate-500">
+                      {assigned.length === 0 ? 'Sin evidencias asignadas aún' : `Evidencias: ${assigned.map(e => `#${e.numero}`).join(', ')}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleAddRow(idx)}
+                      className="text-emerald-700 font-bold hover:underline"
+                    >
+                      + Agregar a {title}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Evidences List Card */}
       <div className="bg-white border-2 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
         <div className="p-4 border-b-2 border-black flex flex-wrap items-center justify-between gap-3 bg-slate-50">
           <div className="flex items-center gap-3">
             <h3 className="text-sm font-black uppercase tracking-wider text-black">
-              Listado de Evidencias ({evidences.length})
+              Listado de Evidencias ({filteredEvidences.length} {rapFilter !== 'ALL' ? 'filtradas' : 'totales'})
             </h3>
             <span className="text-[10px] font-mono font-bold bg-white border border-black px-2 py-0.5 text-slate-800">
               {evidences.length === 1 ? '1 Evidencia' : `${evidences.length} Evidencias Reales`}
@@ -160,7 +251,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
             <button
               id="add-first-evidence-btn"
               type="button"
-              onClick={handleAddRow}
+              onClick={() => handleAddRow()}
               className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-black bg-emerald-400 hover:bg-emerald-500 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition"
             >
               <Plus className="h-4 w-4" />
@@ -174,13 +265,16 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
                 <tr className="bg-black text-white text-[10px] font-black uppercase tracking-widest">
                   <th className="py-3 px-3 w-16 text-center border-r border-slate-700">N°</th>
                   <th className="py-3 px-4 border-r border-slate-700">Descripción de la Evidencia</th>
-                  <th className="py-3 px-4 w-44 text-center border-r border-slate-700">Estado Por Defecto</th>
-                  <th className="py-3 px-4 w-60 border-r border-slate-700">Observaciones Fijas</th>
+                  {raps.length > 0 && (
+                    <th className="py-3 px-4 w-52 border-r border-slate-700 text-center">Resultado de Aprendizaje (RAP)</th>
+                  )}
+                  <th className="py-3 px-4 w-40 text-center border-r border-slate-700">Estado Por Defecto</th>
+                  <th className="py-3 px-4 w-56 border-r border-slate-700">Observaciones Fijas</th>
                   <th className="py-3 px-3 w-28 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-slate-200 text-xs">
-                {evidences.map((ev, idx) => (
+                {filteredEvidences.map((ev, idx) => (
                   <tr
                     key={ev.id}
                     className="hover:bg-slate-50 transition"
@@ -198,6 +292,29 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
                         className="w-full p-2 border-2 border-slate-300 font-semibold focus:border-black focus:bg-white text-xs outline-none"
                       />
                     </td>
+
+                    {/* RAP Selector Column */}
+                    {raps.length > 0 && (
+                      <td className="py-3 px-4 border-r-2 border-slate-200">
+                        <select
+                          id={`evidence-rap-${idx}`}
+                          value={ev.rapIndex !== undefined ? ev.rapIndex : -1}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            handleUpdate(ev.id, 'rapIndex', val === -1 ? undefined : val);
+                          }}
+                          className="w-full p-1.5 text-xs font-bold bg-white border-2 border-black focus:bg-emerald-50 outline-none"
+                        >
+                          <option value={-1}>General / Todos los RAPs</option>
+                          {raps.map((r, rIdx) => (
+                            <option key={rIdx} value={rIdx}>
+                              {getRapShortTitle(r, rIdx)}: {r.substring(0, 45)}...
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
+
                     <td className="py-3 px-4 text-center border-r-2 border-slate-200">
                       <select
                         id={`evidence-status-${idx}`}
@@ -264,11 +381,11 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
           </div>
         )}
 
-        <div className="p-4 bg-slate-50 border-t-2 border-black flex items-center justify-between">
+        <div className="p-4 bg-slate-50 border-t-2 border-black flex items-center justify-between flex-wrap gap-2">
           <button
             id="add-evidence-bottom-btn"
             type="button"
-            onClick={handleAddRow}
+            onClick={() => handleAddRow(rapFilter !== 'ALL' ? rapFilter : undefined)}
             className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-black hover:underline"
           >
             <Plus className="h-4 w-4" />
@@ -296,7 +413,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
           onClick={onContinue}
           className="flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider text-black bg-emerald-400 hover:bg-emerald-500 border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
         >
-          <span>Siguiente: Lista de Aprendices</span>
+          <span>Siguiente: Matriz de Calificaciones</span>
           <ArrowRight className="h-4 w-4" />
         </button>
       </div>
@@ -307,8 +424,8 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
           id="bulk-evidence-modal"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
         >
-          <div className="w-full max-w-lg bg-white p-6 border-4 border-black shadow-[10px_10px_0px_0px_rgba(0,0,0,1)]">
-            <div className="flex items-center justify-between border-b-2 border-black pb-3 mb-4">
+          <div className="w-full max-w-lg bg-white p-6 border-4 border-black shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-black pb-3">
               <div>
                 <h3 className="text-base font-black uppercase tracking-tight text-black">
                   Pegar Lista de Evidencias
@@ -317,16 +434,39 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
               </div>
             </div>
 
+            {raps.length > 0 && (
+              <div>
+                <label className="block text-[11px] font-black uppercase text-slate-800 mb-1">
+                  Asignar estas evidencias al Resultado de Aprendizaje:
+                </label>
+                <select
+                  value={bulkTargetRap !== undefined ? bulkTargetRap : -1}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setBulkTargetRap(val === -1 ? undefined : val);
+                  }}
+                  className="w-full p-2 text-xs font-bold border-2 border-black bg-slate-50 focus:bg-white"
+                >
+                  <option value={-1}>General / Sin asignación fija</option>
+                  {raps.map((r, rIdx) => (
+                    <option key={rIdx} value={rIdx}>
+                      {getRapShortTitle(r, rIdx)}: {r.substring(0, 50)}...
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <textarea
               id="bulk-evidence-textarea"
               rows={8}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
               placeholder={`Evidencia GA1-240202501-AA1-EV01. Cuestionario.\nEvidencia GA1-240202501-AA1-EV02. Video presentación.\nEvidencia GA1-240202501-AA1-EV03. Folleto.\nGA2-240202501-AA1-EV01. Cuestionario.`}
-              className="w-full p-3 text-xs font-mono font-medium border-2 border-black bg-slate-50 focus:bg-white focus:outline-none resize-y mb-4"
+              className="w-full p-3 text-xs font-mono font-medium border-2 border-black bg-slate-50 focus:bg-white focus:outline-none resize-y"
             />
 
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowBulkModal(false)}
@@ -351,3 +491,4 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({
     </div>
   );
 };
+

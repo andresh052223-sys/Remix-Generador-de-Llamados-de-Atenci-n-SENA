@@ -4,6 +4,7 @@ export interface GeneralInfo {
   centroFormacion?: string;
   modalidad?: string;
   nombreInstructorAsignado: string;
+  transversal?: string; // Transversal o componente formativo (e.g. Transversal Inglés)
   nombreInstructorLlamado: string;
   fechaEntregaLlamado?: string; // Fecha de entrega / emisión del llamado de atención
   fechaLimiteEvidencias?: string; // Fecha límite o plazo para entrega de evidencias
@@ -11,6 +12,12 @@ export interface GeneralInfo {
   competencia: string;
   resultadosAprendizaje: string[]; // List of RAs
   observacionesAprendiz: string;
+  // Plan de Mejoramiento
+  planMejoramientoActivo?: boolean; // Activar/desactivar inclusión del plan de mejoramiento
+  planMejoramientoTipo?: 'Académico' | 'Disciplinario'; // Tipo de plan
+  planMejoramientoDescripcion?: string; // Descripción de actividades y acciones de mejora
+  planMejoramientoFechaLimite?: string; // Fecha límite o plazo de cumplimiento del plan
+  planMejoramientoCompromiso?: string; // Cláusula de compromiso del aprendiz y reglamento SENA
   juicioTexto: string;
   juicioResultado: 'NO_APROBO' | 'APROBO';
   senaLogoUrl?: string;
@@ -28,6 +35,7 @@ export interface EvidenceItem {
   fechaEntrega?: string;
   defaultEstado: EvidenceStatus;
   observacion?: string;
+  rapIndex?: number; // Index of the Resultado de Aprendizaje (0, 1, ...) or undefined for all/general
 }
 
 export interface ApprenticeEvidenceStatus {
@@ -47,6 +55,7 @@ export interface Apprentice {
   observacionesEspecificas?: string;
   juicioEspecifico?: 'NO_APROBO' | 'APROBO';
   observacionAprendizEspecifica?: string;
+  planMejoramientoEspecifico?: string; // Acciones o compromisos específicos de mejora para el aprendiz
 }
 
 export interface SignatureConfig {

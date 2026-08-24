@@ -1020,6 +1020,18 @@ export const ApprenticeManager: React.FC<ApprenticeManagerProps> = ({
                             className="w-full p-2 text-xs font-medium border-2 border-black bg-white focus:outline-none"
                           />
                         </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                            Plan de Mejoramiento personalizado (Opcional - Reemplaza el general):
+                          </label>
+                          <input
+                            type="text"
+                            value={app.planMejoramientoEspecifico || ''}
+                            onChange={(e) => handleUpdateApprentice(app.id, 'planMejoramientoEspecifico', e.target.value)}
+                            placeholder="Dejar en blanco para usar el plan de mejoramiento general..."
+                            className="w-full p-2 text-xs font-medium border-2 border-black bg-white focus:outline-none"
+                          />
+                        </div>
                       </div>
 
                       <div className="border-2 border-black bg-white p-4">

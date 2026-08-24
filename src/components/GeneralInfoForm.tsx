@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { GeneralInfo, SignatureConfig } from '../types';
-import { Plus, Trash2, PenTool, Check, ArrowRight, ShieldAlert, Upload, Image as ImageIcon, CheckCircle2, RotateCcw, Calendar, Clock } from 'lucide-react';
+import { Plus, Trash2, PenTool, Check, ArrowRight, ShieldAlert, Upload, Image as ImageIcon, CheckCircle2, RotateCcw, Calendar, Clock, Target, BookOpen, FileCheck2, FileText } from 'lucide-react';
 import { SenaLogo } from './SenaLogo';
 
 interface GeneralInfoFormProps {
@@ -17,6 +17,19 @@ const MOTIVO_PRESETS = [
   'Bajo rendimiento académico y retraso reiterado en la entrega de actividades de aprendizaje.',
   'Inasistencia injustificada y no presentación de evidencias requeridas para la competencia.',
   'Falta de participación en las sesiones sincrónicas y no entrega de los talleres correspondientes.'
+];
+
+const PLAN_ACCIONES_PRESETS = [
+  'El aprendiz deberá desarrollar y entregar la totalidad de las evidencias identificadas como NO o en estado de corrección en este documento, atendiendo a los criterios de evaluación y especificaciones de la guía de aprendizaje en la plataforma institucional.',
+  'Presentar las evidencias pendientes, asistir a sesiones de asesoría y sustentación sincrónica con el instructor para validar la apropiación de conocimientos del Resultado de Aprendizaje.',
+  'Elaborar taller de nivelación y corrección de las actividades no superadas, realizando la entrega a través del espacio habilitado en plataforma y participando en la retroalimentación técnica.',
+  'Cumplir con las actividades complementarias acordadas y presentar sustentación oral o práctica de los temas correspondientes a la competencia formativa.'
+];
+
+const PLAN_COMPROMISO_PRESETS = [
+  'El aprendiz se compromete a cumplir a cabalidad con las actividades concertadas en las fechas indicadas. El incumplimiento injustificado dará lugar al traslado del caso al Comité de Evaluación y Seguimiento según el Reglamento del Aprendiz SENA.',
+  'Me comprometo a entregar las actividades asignadas en las fechas límites y solicitar asesoría oportuna al instructor en caso de dudas sobre los criterios de evaluación.',
+  'El no cumplimiento de este plan de mejoramiento acarreará las medidas académicas y disciplinarias estipuladas en el reglamento del aprendiz del Servicio Nacional de Aprendizaje SENA.'
 ];
 
 export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
@@ -130,6 +143,13 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
     const deadline = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
     const deadlineStr = deadline.toISOString().split('T')[0];
     handleChange('fechaLimiteEvidencias', deadlineStr);
+  };
+
+  const handleSetPlanDeadlineDays = (days: number) => {
+    const baseDate = generalInfo.fechaEntregaLlamado ? new Date(generalInfo.fechaEntregaLlamado) : new Date();
+    const deadline = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+    const deadlineStr = deadline.toISOString().split('T')[0];
+    handleChange('planMejoramientoFechaLimite', deadlineStr);
   };
 
   const handleRemoveRAP = (index: number) => {
@@ -265,6 +285,51 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
                   placeholder="Ej: Andres Arturo Huertas Carreño"
                   className="w-full p-3 text-sm font-semibold bg-slate-50 border-2 border-black focus:bg-white focus:outline-none transition-all"
                 />
+              </div>
+
+              {/* Transversal / Componente */}
+              <div className="sm:col-span-3 bg-emerald-50/50 p-3.5 border-2 border-black">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                    <BookOpen className="h-3.5 w-3.5 text-emerald-700" />
+                    Transversal / Componente Formativo
+                  </label>
+                  <span className="text-[10px] font-bold text-slate-600 uppercase">
+                    Aparece debajo de Instructor Asignado
+                  </span>
+                </div>
+                <input
+                  id="input-transversal"
+                  type="text"
+                  value={generalInfo.transversal ?? 'Transversal Inglés'}
+                  onChange={(e) => handleChange('transversal', e.target.value)}
+                  placeholder="Ej: Transversal Inglés"
+                  className="w-full p-2.5 text-sm font-bold bg-white border-2 border-black focus:outline-none transition-all mb-2"
+                />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9.5px] font-black text-slate-600 uppercase">Opciones rápidas:</span>
+                  {[
+                    'Transversal Inglés',
+                    'Transversal Ética',
+                    'Transversal TIC',
+                    'Transversal Comunicación',
+                    'Transversal Emprendimiento',
+                    'Competencia Técnica'
+                  ].map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => handleChange('transversal', option)}
+                      className={`text-[10px] font-bold px-2 py-1 border border-black transition-all ${
+                        (generalInfo.transversal || 'Transversal Inglés') === option
+                          ? 'bg-emerald-400 text-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                          : 'bg-white hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="sm:col-span-3">
@@ -466,6 +531,177 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Card 4: Plan de Mejoramiento (SENA) */}
+          <div className="bg-white border-2 border-black p-6 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-black pb-3 mb-5 gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 bg-emerald-500 border border-black"></span>
+                <h3 className="text-sm font-black uppercase tracking-wider text-black flex items-center gap-2">
+                  <Target className="h-4 w-4 text-emerald-600" />
+                  Plan de Mejoramiento Concertado
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  id="toggle-plan-mejoramiento-btn"
+                  type="button"
+                  onClick={() => handleChange('planMejoramientoActivo', !(generalInfo.planMejoramientoActivo ?? true))}
+                  className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider border-2 border-black transition-all flex items-center gap-1.5 ${
+                    (generalInfo.planMejoramientoActivo ?? true)
+                      ? 'bg-emerald-400 text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {(generalInfo.planMejoramientoActivo ?? true) ? 'Plan Activo en Documento' : 'Plan Desactivado'}
+                </button>
+              </div>
+            </div>
+
+            {(generalInfo.planMejoramientoActivo ?? true) ? (
+              <div className="space-y-5">
+                {/* Tipo de Plan y Plazo */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-emerald-50/60 p-4 border-2 border-black">
+                  <div>
+                    <label className="block text-[11px] font-black uppercase tracking-wider text-slate-800 mb-1.5">
+                      Tipo de Plan de Mejoramiento
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        id="plan-tipo-academico-btn"
+                        type="button"
+                        onClick={() => handleChange('planMejoramientoTipo', 'Académico')}
+                        className={`py-2 px-3 text-xs font-black uppercase tracking-wider border-2 border-black transition-all ${
+                          (generalInfo.planMejoramientoTipo || 'Académico') === 'Académico'
+                            ? 'bg-emerald-400 text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'
+                            : 'bg-white text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Académico
+                      </button>
+                      <button
+                        id="plan-tipo-disciplinario-btn"
+                        type="button"
+                        onClick={() => handleChange('planMejoramientoTipo', 'Disciplinario')}
+                        className={`py-2 px-3 text-xs font-black uppercase tracking-wider border-2 border-black transition-all ${
+                          generalInfo.planMejoramientoTipo === 'Disciplinario'
+                            ? 'bg-amber-400 text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'
+                            : 'bg-white text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Disciplinario
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[11px] font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-emerald-700" />
+                        Fecha Límite / Plazo del Plan
+                      </label>
+                    </div>
+                    <input
+                      id="input-plan-fecha-limite"
+                      type="date"
+                      value={generalInfo.planMejoramientoFechaLimite || generalInfo.fechaLimiteEvidencias || ''}
+                      onChange={(e) => handleChange('planMejoramientoFechaLimite', e.target.value)}
+                      className="w-full p-2.5 text-xs font-semibold bg-white border-2 border-black focus:outline-none"
+                    />
+                    <div className="flex items-center gap-1.5 pt-1.5">
+                      <span className="text-[9.5px] font-bold text-slate-500 uppercase">Fijar Plazo:</span>
+                      {[3, 5, 7, 10, 15].map((days) => (
+                        <button
+                          key={days}
+                          type="button"
+                          onClick={() => handleSetPlanDeadlineDays(days)}
+                          className="text-[9.5px] font-bold px-1.5 py-0.5 bg-white hover:bg-emerald-300 border border-black transition-all"
+                          title={`Fijar fecha a +${days} días`}
+                        >
+                          +{days}d
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Acciones y Actividades a Desarrollar */}
+                <div>
+                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-800 mb-1">
+                    Acciones y Actividades a Desarrollar por el Aprendiz <span className="text-rose-600">*</span>
+                  </label>
+                  <textarea
+                    id="input-plan-descripcion"
+                    rows={3}
+                    value={generalInfo.planMejoramientoDescripcion || ''}
+                    onChange={(e) => handleChange('planMejoramientoDescripcion', e.target.value)}
+                    placeholder="Especifique las actividades de mejoramiento, entrega de evidencias pendientes, talleres y sustentación..."
+                    className="w-full p-3 text-sm font-medium bg-slate-50 border-2 border-black focus:bg-white focus:outline-none resize-y transition-all"
+                  />
+
+                  {/* Acciones Quick Presets */}
+                  <div className="mt-2">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">
+                      Plantillas Rápidas de Acciones:
+                    </span>
+                    <div className="space-y-1.5">
+                      {PLAN_ACCIONES_PRESETS.map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleChange('planMejoramientoDescripcion', preset)}
+                          className="w-full text-left text-xs font-semibold bg-white hover:bg-emerald-100 text-slate-800 p-2 border border-black transition-all block"
+                        >
+                          • {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Compromiso Institucional y Reglamento SENA */}
+                <div>
+                  <label className="block text-[11px] font-black uppercase tracking-wider text-slate-800 mb-1">
+                    Cláusula de Compromiso y Consecuencias Institucionales
+                  </label>
+                  <textarea
+                    id="input-plan-compromiso"
+                    rows={2}
+                    value={generalInfo.planMejoramientoCompromiso || ''}
+                    onChange={(e) => handleChange('planMejoramientoCompromiso', e.target.value)}
+                    placeholder="Cláusula de compromiso del aprendiz y consecuencia de remitir a Comité de Evaluación y Seguimiento..."
+                    className="w-full p-2.5 text-xs font-medium bg-slate-50 border-2 border-black focus:bg-white focus:outline-none resize-y transition-all"
+                  />
+
+                  {/* Compromiso Presets */}
+                  <div className="mt-2">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                      Cláusulas Institucionales de Ejemplo:
+                    </span>
+                    <div className="space-y-1">
+                      {PLAN_COMPROMISO_PRESETS.map((clause, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleChange('planMejoramientoCompromiso', clause)}
+                          className="w-full text-left text-[11px] text-slate-700 bg-slate-50 hover:bg-emerald-100 p-1.5 border border-slate-300 hover:border-black transition-all block"
+                        >
+                          {clause}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border-2 border-dashed border-slate-300 text-center">
+                <p className="text-xs text-slate-500 font-medium">
+                  El Plan de Mejoramiento está temporalmente desactivado para este llamado de atención. Puede reactivarlo pulsando el botón superior.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

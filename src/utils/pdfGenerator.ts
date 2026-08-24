@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import JSZip from 'jszip';
 import { Apprentice, EvidenceItem, GeneralInfo, SignatureConfig } from '../types';
 import { getSenaLogoDataUrl } from './senaLogo';
+import { evaluateApprenticeRaps, getRapShortTitle, getEvidenceRapInfo } from './rapUtils';
 
 /**
  * Builds the complete vertical (Portrait) SENA Llamado de Atención document for a single apprentice.
@@ -152,6 +153,18 @@ export async function buildApprenticePdf(
   doc.text(generalInfo.nombreInstructorAsignado || '', left + colInstLabel + 2, currY + 4.2);
   currY += r3H;
 
+  // Row 3.5: Transversal
+  const colTransLabel = 58;
+  const rTransH = 6.2;
+  doc.rect(left, currY, contentWidth, rTransH);
+  doc.line(left + colTransLabel, currY, left + colTransLabel, currY + rTransH);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Transversal:', left + 1.5, currY + 4.2);
+  doc.setFont('helvetica', 'normal');
+  doc.text(generalInfo.transversal || 'Transversal Inglés', left + colTransLabel + 2, currY + 4.2);
+  currY += rTransH;
+
   // Row 4: Motivo
   const colMotivoLabel = 26;
   const r4H = 7.0;
@@ -217,15 +230,111 @@ export async function buildApprenticePdf(
   });
   currY += r6H;
 
-  // Row 7: Resultados de Aprendizaje
+  // Helper function to wrap text with a narrower first line to accommodate inline tag badges
+  const wrapTextWithIndent = (
+    textToWrap: string,
+    firstLineWidth: number,
+    otherLinesWidth: number
+  ): string[] => {
+    const words = textToWrap.split(/\s+/).filter(Boolean);
+    const wrappedLines: string[] = [];
+    let currentLine = '';
+    let isFirstLine = true;
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const maxW = isFirstLine ? firstLineWidth : otherLinesWidth;
+      const testW = doc.getTextWidth(testLine);
+      if (testW <= maxW) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          wrappedLines.push(currentLine);
+          isFirstLine = false;
+          currentLine = word;
+        } else {
+          wrappedLines.push(word);
+          isFirstLine = false;
+          currentLine = '';
+        }
+      }
+    }
+    if (currentLine) {
+      wrappedLines.push(currentLine);
+    }
+    return wrappedLines.length > 0 ? wrappedLines : [''];
+  };
+
+  // Row 7: Resultados de Aprendizaje (con estado de aprobación por RAP para este aprendiz)
+  const rapSummary = evaluateApprenticeRaps(apprentice, generalInfo, evidences);
   const colRaLabel = 26;
-  const raListText = Array.isArray(generalInfo.resultadosAprendizaje)
-    ? generalInfo.resultadosAprendizaje.join('\n\n')
-    : (generalInfo.resultadosAprendizaje || '');
-  
-  // Calculate proportional height for RAPs
-  const raLinesCount = doc.splitTextToSize(raListText, contentWidth - colRaLabel - 4).length;
-  const r7H = Math.max(18, Math.min(30, raLinesCount * 3.2 + 4));
+  const availableRaWidth = contentWidth - colRaLabel - 4; // ~157.9 mm
+
+  interface ProcessedRapItem {
+    statusLabel: string;
+    isApproved: boolean;
+    tagWidth: number;
+    lines: string[];
+  }
+  const processedRaps: ProcessedRapItem[] = [];
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.0);
+
+  if (rapSummary.raps.length > 0) {
+    rapSummary.raps.forEach((r) => {
+      const statusLabel = r.isApproved ? '[APROBÓ]' : '[NO APROBÓ]';
+      const pendingInfo = !r.isApproved && r.pendingEvidences.length > 0
+        ? ` (Evidencias pendientes: ${r.pendingEvidences.map((e) => `#${e.numero}`).join(', ')})`
+        : '';
+      const cleanRapText = r.rapText
+        .replace(/^(RAP\s*\d+|RAP-\d+|R\.A\.P\.\s*\d+|R\.A\.\s*\d+|RA\s*\d+)[\s:\-\.]*/i, '')
+        .trim();
+      const fullText = cleanRapText ? `${r.rapTitle}: ${cleanRapText}${pendingInfo}` : `${r.rapText}${pendingInfo}`;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.0);
+      const tagWidth = doc.getTextWidth(statusLabel) + 1.5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.0);
+      const firstLineMaxW = Math.max(20, availableRaWidth - tagWidth - 2);
+      const otherLinesMaxW = Math.max(20, availableRaWidth - 3);
+      const lines = wrapTextWithIndent(fullText, firstLineMaxW, otherLinesMaxW);
+
+      processedRaps.push({
+        statusLabel,
+        isApproved: r.isApproved,
+        tagWidth,
+        lines
+      });
+    });
+  } else {
+    const rawRaps = Array.isArray(generalInfo.resultadosAprendizaje)
+      ? generalInfo.resultadosAprendizaje
+      : [generalInfo.resultadosAprendizaje || ''];
+    rawRaps.forEach((r) => {
+      if (r) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.0);
+        const lines = wrapTextWithIndent(r, availableRaWidth - 2, availableRaWidth - 2);
+        processedRaps.push({
+          statusLabel: '',
+          isApproved: false,
+          tagWidth: 0,
+          lines
+        });
+      }
+    });
+  }
+
+  let totalRaLines = 0;
+  processedRaps.forEach((p) => {
+    totalRaLines += p.lines.length;
+  });
+
+  const rapSpacing = 1.0;
+  const r7H = Math.max(16, Math.min(42, totalRaLines * 2.8 + Math.max(0, processedRaps.length - 1) * rapSpacing + 4.5));
 
   doc.rect(left, currY, contentWidth, r7H);
   doc.line(left + colRaLabel, currY, left + colRaLabel, currY + r7H);
@@ -234,13 +343,39 @@ export async function buildApprenticePdf(
   doc.setFontSize(7.2);
   doc.text('Resultados de', left + 1.5, currY + 4.2);
   doc.text('Aprendizaje:', left + 1.5, currY + 7.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.6);
 
-  doc.text(raListText, left + colRaLabel + 2, currY + 3.8, {
-    maxWidth: contentWidth - colRaLabel - 4,
-    lineHeightFactor: 1.2
+  let raTextY = currY + 3.6;
+  processedRaps.forEach((rapItem) => {
+    // Draw tag on line 0
+    if (rapItem.statusLabel) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.0);
+      if (rapItem.isApproved) {
+        doc.setTextColor(20, 110, 50); // Green
+      } else {
+        doc.setTextColor(170, 20, 20); // Red
+      }
+      doc.text(rapItem.statusLabel, left + colRaLabel + 2, raTextY);
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.0);
+    doc.setTextColor(0, 0, 0);
+
+    rapItem.lines.forEach((line, lIdx) => {
+      if (raTextY <= currY + r7H - 1.2) {
+        const lineX = lIdx === 0 && rapItem.statusLabel
+          ? left + colRaLabel + 2 + rapItem.tagWidth + 1.5
+          : left + colRaLabel + 3;
+        doc.text(line, lineX, raTextY);
+        raTextY += 2.8;
+      }
+    });
+
+    raTextY += rapSpacing;
   });
+
+  doc.setTextColor(0, 0, 0);
   currY += r7H;
 
   // Row 8: Observaciones que hace el aprendiz
@@ -262,187 +397,378 @@ export async function buildApprenticePdf(
   currY += r8H + 3.5;
 
   // =============================================================
-  // 3. Evidence Table (ONLY ACTUAL EVIDENCES - NO BLANK PLACEHOLDER ROWS)
+  // 3. Evidence Table (WITH RESULTADO DE APRENDIZAJE COLUMN)
   // =============================================================
-  const colN = 8;
-  const colEv = 96;
-  const colSi = 13;
-  const colNo = 13;
-  const colObs = contentWidth - colN - colEv - colSi - colNo; // ~57.9 mm
+  const colN = 7;
+  const colRap = 42;
+  const colEv = 68;
+  const colSi = 11;
+  const colNo = 11;
+  const colObs = contentWidth - colN - colRap - colEv - colSi - colNo; // ~48.9 mm
   const rowH = 6.6;
 
   // Draw Table Header
-  drawEvidenceTableHeader(doc, left, currY, contentWidth, colN, colEv, colSi, colNo, colObs);
+  drawEvidenceTableHeader(doc, left, currY, contentWidth, colN, colRap, colEv, colSi, colNo, colObs);
   currY += 8.5;
 
   if (evidences.length === 0) {
     // Single informative row if no evidences exist
     doc.rect(left, currY, contentWidth, rowH);
     doc.line(left + colN, currY, left + colN, currY + rowH);
-    doc.line(left + colN + colEv, currY, left + colN + colEv, currY + rowH);
-    doc.line(left + colN + colEv + colSi, currY, left + colN + colEv + colSi, currY + rowH);
-    doc.line(left + colN + colEv + colSi + colNo, currY, left + colN + colEv + colSi + colNo, currY + rowH);
+    doc.line(left + colN + colRap, currY, left + colN + colRap, currY + rowH);
+    doc.line(left + colN + colRap + colEv, currY, left + colN + colRap + colEv, currY + rowH);
+    doc.line(left + colN + colRap + colEv + colSi, currY, left + colN + colRap + colEv + colSi, currY + rowH);
+    doc.line(left + colN + colRap + colEv + colSi + colNo, currY, left + colN + colRap + colEv + colSi + colNo, currY + rowH);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.text('1', left + colN / 2, currY + 4.5, { align: 'center' });
-    doc.text('Sin evidencias pendientes registradas', left + colN + 2, currY + 4.5);
-    doc.text('-', left + colN + colEv + colSi + colNo / 2, currY + 4.5, { align: 'center' });
+    doc.text('-', left + colN + 2, currY + 4.5);
+    doc.text('Sin evidencias pendientes registradas', left + colN + colRap + 2, currY + 4.5);
+    doc.text('-', left + colN + colRap + colEv + colSi + colNo / 2, currY + 4.5, { align: 'center' });
     currY += rowH;
   } else {
     // Render ONLY real evidences
     for (let i = 0; i < evidences.length; i++) {
       const ev = evidences[i];
+      const rapInfo = getEvidenceRapInfo(ev, generalInfo);
+
+      // Pre-calculate line wraps for RAP, Evidence name and Observation
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.8);
+      const rapLines = doc.splitTextToSize(rapInfo.title, colRap - 3);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.2);
+      const evLines = doc.splitTextToSize(ev.nombre || '', colEv - 3);
+
+      const appStatus = (apprentice.evidenciasStatus && apprentice.evidenciasStatus[ev.id]) || ev.defaultEstado || 'NO';
+      const obs = ev.observacion || (appStatus === 'CORREGIR' ? 'Debe corregir y presentar ajustes' : '');
+      doc.setFontSize(5.8);
+      const obsLines = obs ? doc.splitTextToSize(obs, colObs - 3) : [];
+
+      const maxLines = Math.max(rapLines.length, evLines.length, obsLines.length, 1);
+      const actualRowH = Math.max(6.6, maxLines * 2.6 + 2.2);
 
       // Page break check if table overflows page
-      if (currY + rowH > maxPageY - 8) {
+      if (currY + actualRowH > maxPageY - 8) {
         doc.addPage('letter', 'portrait');
         currY = marginTop;
-        drawEvidenceTableHeader(doc, left, currY, contentWidth, colN, colEv, colSi, colNo, colObs);
+        drawEvidenceTableHeader(doc, left, currY, contentWidth, colN, colRap, colEv, colSi, colNo, colObs);
         currY += 8.5;
       }
 
-      doc.rect(left, currY, contentWidth, rowH);
-      doc.line(left + colN, currY, left + colN, currY + rowH);
-      doc.line(left + colN + colEv, currY, left + colN + colEv, currY + rowH);
-      doc.line(left + colN + colEv + colSi, currY, left + colN + colEv + colSi, currY + rowH);
-      doc.line(left + colN + colEv + colSi + colNo, currY, left + colN + colEv + colSi + colNo, currY + rowH);
+      doc.rect(left, currY, contentWidth, actualRowH);
+      doc.line(left + colN, currY, left + colN, currY + actualRowH);
+      doc.line(left + colN + colRap, currY, left + colN + colRap, currY + actualRowH);
+      doc.line(left + colN + colRap + colEv, currY, left + colN + colRap + colEv, currY + actualRowH);
+      doc.line(left + colN + colRap + colEv + colSi, currY, left + colN + colRap + colEv + colSi, currY + actualRowH);
+      doc.line(left + colN + colRap + colEv + colSi + colNo, currY, left + colN + colRap + colEv + colSi + colNo, currY + actualRowH);
 
       const rowNum = i + 1;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.2);
-      doc.text(`${rowNum}`, left + colN / 2, currY + 4.5, { align: 'center' });
+      const markY = currY + (actualRowH / 2) + 1.2;
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.8);
-      doc.text(ev.nombre || '', left + colN + 2, currY + 4.3, {
-        maxWidth: colEv - 4,
-        lineHeightFactor: 1.15
+      // Col 1: Row Number
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.0);
+      doc.text(`${rowNum}`, left + colN / 2, markY, { align: 'center' });
+
+      // Col 2: Resultado de Aprendizaje
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.8);
+      const rapStartY = currY + (actualRowH - rapLines.length * 2.5) / 2 + 1.8;
+      rapLines.forEach((line: string, lIdx: number) => {
+        doc.text(line, left + colN + 1.5, rapStartY + (lIdx * 2.5));
       });
 
-      // Status
-      const appStatus = (apprentice.evidenciasStatus && apprentice.evidenciasStatus[ev.id]) || ev.defaultEstado || 'NO';
+      // Col 3: Evidencia
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.2);
+      const evStartY = currY + (actualRowH - evLines.length * 2.6) / 2 + 1.9;
+      evLines.forEach((line: string, lIdx: number) => {
+        doc.text(line, left + colN + colRap + 1.5, evStartY + (lIdx * 2.6));
+      });
+
+      // Col 4 & 5: Status
       if (appStatus === 'SI') {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.2);
-        doc.text('SI', left + colN + colEv + colSi / 2, currY + 4.5, { align: 'center' });
+        doc.text('SI', left + colN + colRap + colEv + colSi / 2, markY, { align: 'center' });
       } else if (appStatus === 'CORREGIR') {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.2);
-        doc.text('CORR', left + colN + colEv + colSi + colNo / 2, currY + 4.5, { align: 'center' });
+        doc.setFontSize(5.8);
+        doc.text('CORR', left + colN + colRap + colEv + colSi + colNo / 2, markY, { align: 'center' });
       } else if (appStatus === 'NO') {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.2);
-        doc.text('NO', left + colN + colEv + colSi + colNo / 2, currY + 4.5, { align: 'center' });
+        doc.text('NO', left + colN + colRap + colEv + colSi + colNo / 2, markY, { align: 'center' });
       } else {
         doc.setFont('helvetica', 'normal');
-        doc.text('-', left + colN + colEv + colSi + colNo / 2, currY + 4.5, { align: 'center' });
+        doc.setFontSize(7.0);
+        doc.text('-', left + colN + colRap + colEv + colSi + colNo / 2, markY, { align: 'center' });
       }
 
-      // Observation
-      const obs = ev.observacion || (appStatus === 'CORREGIR' ? 'Debe corregir y presentar ajustes' : '');
-      if (obs) {
+      // Col 6: Observation
+      if (obsLines.length > 0) {
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.2);
-        doc.text(obs, left + colN + colEv + colSi + colNo + 2, currY + 4.3, {
-          maxWidth: colObs - 4,
-          lineHeightFactor: 1.15
+        doc.setFontSize(5.8);
+        const obsStartY = currY + (actualRowH - obsLines.length * 2.5) / 2 + 1.8;
+        obsLines.forEach((line: string, lIdx: number) => {
+          doc.text(line, left + colN + colRap + colEv + colSi + colNo + 1.5, obsStartY + (lIdx * 2.5));
         });
       }
 
-      currY += rowH;
+      currY += actualRowH;
     }
   }
 
   // =============================================================
-  // 4. JUICIO (Evaluation Judgment Section)
+  // 4. PLAN DE MEJORAMIENTO (Plan for Improvement Section)
   // =============================================================
-  const juicioH = 15;
-  const signaturesH = 30;
-  const neededBottomSpace = juicioH + signaturesH + 10;
+  const isPlanActivo = generalInfo.planMejoramientoActivo ?? true;
+  let planH = 0;
+  const colPlanLabel = 44;
+  const planActionsText = apprentice.planMejoramientoEspecifico || generalInfo.planMejoramientoDescripcion || 'El aprendiz deberá presentar y sustentar la totalidad de las evidencias pendientes o en estado de corrección en la plataforma institucional.';
+  const planTipoText = (generalInfo.planMejoramientoTipo || 'Académico').toUpperCase();
+  const planDeadlineText = generalInfo.planMejoramientoFechaLimite || generalInfo.fechaLimiteEvidencias || '-';
+  const planCompromisoText = generalInfo.planMejoramientoCompromiso || '';
 
-  // If juicio + signatures do not fit on current page, add new page
+  // Calculate dynamic heights for Plan rows so text never overflows
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.1);
+  const planActionLines = isPlanActivo ? doc.splitTextToSize(planActionsText, contentWidth - colPlanLabel - 4) : [];
+  const planRow1H = isPlanActivo ? Math.max(7.5, planActionLines.length * 2.7 + 3.0) : 0;
+  const planRow2H = isPlanActivo ? 5.2 : 0;
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(5.8);
+  const planCompromiseLines = (isPlanActivo && planCompromisoText) ? doc.splitTextToSize(planCompromisoText, contentWidth - colPlanLabel - 4) : [];
+  const planRow3H = (isPlanActivo && planCompromisoText) ? Math.max(6.2, planCompromiseLines.length * 2.5 + 3.0) : 0;
+  const planHeaderH = isPlanActivo ? 4.8 : 0;
+
+  if (isPlanActivo) {
+    planH = planHeaderH + planRow1H + planRow2H + planRow3H;
+  }
+
+  // =============================================================
+  // 5. JUICIO (Evaluation Judgment Section - Shows each RAP's approval status)
+  // =============================================================
+  const colJuicioLabel = 18;
+  const colJuicioDesc = 62;
+  const colJuicioResLabel = 67.9;
+  const colAprobo = 20;
+  const colNoAprobo = 20; // 18 + 62 + 67.9 + 20 + 20 = 187.9 = contentWidth
+
+  // Pre-calculate line wrapping and exact row height for each RAP
+  interface RapRowLayout {
+    rapTitle: string;
+    rapText: string;
+    lines: string[];
+    isApproved: boolean;
+    rowH: number;
+  }
+
+  const rapRowsData: RapRowLayout[] = [];
+
+  if (rapSummary.raps.length > 0) {
+    rapSummary.raps.forEach((rap) => {
+      // Clean duplicate RAP prefix if present
+      const cleanRapText = rap.rapText
+        .replace(/^(RAP\s*\d+|RAP-\d+|R\.A\.P\.\s*\d+|R\.A\.\s*\d+|RA\s*\d+)[\s:\-\.]*/i, '')
+        .trim();
+      const displayTitle = rap.rapTitle || 'RAP';
+      const displayText = cleanRapText ? `${displayTitle}: ${cleanRapText}` : rap.rapText;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.8);
+      const lines = doc.splitTextToSize(displayText, colJuicioResLabel - 4);
+      // Ensure height is generous enough so letters NEVER overflow or touch the border line
+      const rowH = Math.max(7.2, lines.length * 2.8 + 3.2);
+
+      rapRowsData.push({
+        rapTitle: displayTitle,
+        rapText: displayText,
+        lines,
+        isApproved: rap.isApproved,
+        rowH
+      });
+    });
+  } else {
+    const effectiveJuicio = apprentice.juicioEspecifico || generalInfo.juicioResultado || 'NO_APROBO';
+    rapRowsData.push({
+      rapTitle: 'Juicio General',
+      rapText: 'Juicio General del Programa de Formación',
+      lines: ['Juicio General del Programa de Formación'],
+      isApproved: effectiveJuicio === 'APROBO',
+      rowH: 7.2
+    });
+  }
+
+  const subHeaderH = 5.2;
+  const totalRapsH = rapRowsData.reduce((acc, r) => acc + r.rowH, 0);
+  const juicioH = subHeaderH + totalRapsH;
+  const signaturesH = 30;
+  const neededBottomSpace = planH + (isPlanActivo ? 4 : 0) + juicioH + signaturesH + 8;
+
+  // If plan + juicio + signatures do not fit on current page, add new page
   if (currY + neededBottomSpace > maxPageY) {
     doc.addPage('letter', 'portrait');
     currY = marginTop + 4;
   } else {
-    currY += 5;
+    currY += 4;
   }
 
-  const colJuicioLabel = 22;
-  const colJuicioDesc = 68;
-  const colJuicioResLabel = 54;
-  const colAprobo = 21.9;
-  const colNoAprobo = contentWidth - colJuicioLabel - colJuicioDesc - colJuicioResLabel - colAprobo; // ~22 mm
+  // Render Plan de Mejoramiento if active
+  if (isPlanActivo) {
+    const totalPlanBoxH = planHeaderH + planRow1H + planRow2H + planRow3H;
 
+    // Draw main container
+    doc.rect(left, currY, contentWidth, totalPlanBoxH);
+
+    // Header: PLAN DE MEJORAMIENTO ACADÉMICO / DISCIPLINARIO
+    doc.setFillColor(242, 244, 247);
+    doc.rect(left, currY, contentWidth, planHeaderH, 'F');
+    doc.rect(left, currY, contentWidth, planHeaderH, 'S');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`PLAN DE MEJORAMIENTO ${planTipoText}`, left + contentWidth / 2, currY + 3.4, { align: 'center' });
+
+    let currentPlanY = currY + planHeaderH;
+
+    // Row 1: Acciones a Desarrollar
+    doc.rect(left, currentPlanY, contentWidth, planRow1H);
+    doc.line(left + colPlanLabel, currentPlanY, left + colPlanLabel, currentPlanY + planRow1H);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.text('Acciones / Actividades a Desarrollar:', left + 2, currentPlanY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.1);
+    const planTextStartY = currentPlanY + (planRow1H - planActionLines.length * 2.7) / 2 + 2.0;
+    planActionLines.forEach((line, lIdx) => {
+      doc.text(line, left + colPlanLabel + 2, planTextStartY + (lIdx * 2.7));
+    });
+
+    currentPlanY += planRow1H;
+
+    // Row 2: Fecha Límite de Cumplimiento
+    doc.rect(left, currentPlanY, contentWidth, planRow2H);
+    doc.line(left + colPlanLabel, currentPlanY, left + colPlanLabel, currentPlanY + planRow2H);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.text('Fecha Límite Cumplimiento Plan:', left + 2, currentPlanY + 3.6);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.text(planDeadlineText, left + colPlanLabel + 2, currentPlanY + 3.6);
+
+    currentPlanY += planRow2H;
+
+    // Row 3 (Optional): Compromiso Institucional
+    if (planCompromisoText && planRow3H > 0) {
+      doc.rect(left, currentPlanY, contentWidth, planRow3H);
+      doc.line(left + colPlanLabel, currentPlanY, left + colPlanLabel, currentPlanY + planRow3H);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.8);
+      doc.text('Compromiso del Aprendiz / SENA:', left + 2, currentPlanY + 4.0);
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(5.8);
+      const compromiseStartY = currentPlanY + (planRow3H - planCompromiseLines.length * 2.5) / 2 + 1.9;
+      planCompromiseLines.forEach((line, lIdx) => {
+        doc.text(line, left + colPlanLabel + 2, compromiseStartY + (lIdx * 2.5));
+      });
+
+      currentPlanY += planRow3H;
+    }
+
+    currY = currentPlanY + 3.5;
+  }
+
+  // Draw outer border & vertical dividers for JUICIO
   doc.rect(left, currY, contentWidth, juicioH);
   doc.line(left + colJuicioLabel, currY, left + colJuicioLabel, currY + juicioH);
   doc.line(left + colJuicioLabel + colJuicioDesc, currY, left + colJuicioLabel + colJuicioDesc, currY + juicioH);
   doc.line(left + colJuicioLabel + colJuicioDesc + colJuicioResLabel, currY, left + colJuicioLabel + colJuicioDesc + colJuicioResLabel, currY + juicioH);
   doc.line(left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo, currY, left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo, currY + juicioH);
 
-  // Sub-header for Aprobó / No Aprobó
-  const subHeaderH = 5.5;
+  // Sub-header horizontal line for Aprobó / No Aprobó
   doc.line(
-    left + colJuicioLabel + colJuicioDesc + colJuicioResLabel,
+    left + colJuicioLabel + colJuicioDesc,
     currY + subHeaderH,
     left + contentWidth,
     currY + subHeaderH
   );
 
-  // Label: JUICIO
+  // Label: JUICIO (vertically centered in Col 1)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
-  doc.text('JUICIO', left + colJuicioLabel / 2, currY + 8.5, { align: 'center' });
+  doc.text('JUICIO', left + colJuicioLabel / 2, currY + (juicioH / 2) + 1.2, { align: 'center' });
 
-  // Description
+  // Description in Col 2 (vertically centered in Col 2)
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
+  doc.setFontSize(6.0);
   doc.text(
-    generalInfo.juicioTexto || 'Para superar los resultados de aprendizaje a evaluar debe aprobar todas las evidencias',
+    generalInfo.juicioTexto || 'Para superar los resultados de aprendizaje a evaluar debe aprobar todas las evidencias asignadas.',
     left + colJuicioLabel + 2,
-    currY + 5.2,
-    { maxWidth: colJuicioDesc - 4, lineHeightFactor: 1.2 }
+    currY + 4.5,
+    { maxWidth: colJuicioDesc - 4, lineHeightFactor: 1.15 }
   );
 
-  // JUICIO DEL RESULTADO(S) DE APRENDIZAJE
+  // Subheaders in Cols 3, 4, 5
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.6);
-  doc.text('JUICIO DEL RESULTADO(S)', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel / 2, currY + 6.0, {
-    align: 'center'
-  });
-  doc.text('DE APRENDIZAJE', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel / 2, currY + 10.2, {
+  doc.setFontSize(5.8);
+  doc.text('JUICIO RESULTADO(S) DE APRENDIZAJE', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel / 2, currY + 3.6, {
     align: 'center'
   });
 
-  // APROBÓ / NO APROBÓ headers
-  doc.setFontSize(6.5);
-  doc.text('APROBÓ', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo / 2, currY + 4.0, {
+  doc.setFontSize(6.0);
+  doc.text('APROBÓ', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo / 2, currY + 3.6, {
     align: 'center'
   });
   doc.text(
     'NO APROBÓ',
     left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo + colNoAprobo / 2,
-    currY + 4.0,
+    currY + 3.6,
     { align: 'center' }
   );
 
-  // 'x' marking
-  const effectiveJuicio = apprentice.juicioEspecifico || generalInfo.juicioResultado || 'NO_APROBO';
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  if (effectiveJuicio === 'APROBO') {
-    doc.text('x', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo / 2, currY + 11.2, {
-      align: 'center'
+  // Render each RAP row with vertically centered text and 'x' marks
+  let rowY = currY + subHeaderH;
+  rapRowsData.forEach((rapRow, rIdx) => {
+    // Horizontal separator between RAP rows
+    if (rIdx > 0) {
+      doc.line(left + colJuicioLabel + colJuicioDesc, rowY, left + contentWidth, rowY);
+    }
+
+    // Render RAP text lines with exact line spacing
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.8);
+    const textStartY = rowY + (rapRow.rowH - rapRow.lines.length * 2.6) / 2 + 1.9;
+    rapRow.lines.forEach((line, lIdx) => {
+      doc.text(line, left + colJuicioLabel + colJuicioDesc + 2, textStartY + (lIdx * 2.6));
     });
-  } else {
-    doc.text(
-      'x',
-      left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo + colNoAprobo / 2,
-      currY + 11.2,
-      { align: 'center' }
-    );
-  }
+
+    // Render 'x' mark vertically centered in cell
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    const markY = rowY + (rapRow.rowH / 2) + 1.2;
+    if (rapRow.isApproved) {
+      doc.text('x', left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo / 2, markY, {
+        align: 'center'
+      });
+    } else {
+      doc.text(
+        'x',
+        left + colJuicioLabel + colJuicioDesc + colJuicioResLabel + colAprobo + colNoAprobo / 2,
+        markY,
+        { align: 'center' }
+      );
+    }
+
+    rowY += rapRow.rowH;
+  });
 
   currY += juicioH;
 
@@ -545,6 +871,7 @@ function drawEvidenceTableHeader(
   currY: number,
   contentWidth: number,
   colN: number,
+  colRap: number,
   colEv: number,
   colSi: number,
   colNo: number,
@@ -554,33 +881,37 @@ function drawEvidenceTableHeader(
 
   doc.rect(left, currY, contentWidth, headerH);
   doc.line(left + colN, currY, left + colN, currY + headerH);
-  doc.line(left + colN + colEv, currY, left + colN + colEv, currY + headerH);
-  doc.line(left + colN + colEv + colSi + colNo, currY, left + colN + colEv + colSi + colNo, currY + headerH);
+  doc.line(left + colN + colRap, currY, left + colN + colRap, currY + headerH);
+  doc.line(left + colN + colRap + colEv, currY, left + colN + colRap + colEv, currY + headerH);
+  doc.line(left + colN + colRap + colEv + colSi + colNo, currY, left + colN + colRap + colEv + colSi + colNo, currY + headerH);
 
   // Subdivisions in Aprobó/Presentó (horizontal divider between title and SI/NO)
-  doc.line(left + colN + colEv, currY + 4.2, left + colN + colEv + colSi + colNo, currY + 4.2);
-  doc.line(left + colN + colEv + colSi, currY + 4.2, left + colN + colEv + colSi, currY + headerH);
+  doc.line(left + colN + colRap + colEv, currY + 4.2, left + colN + colRap + colEv + colSi + colNo, currY + 4.2);
+  doc.line(left + colN + colRap + colEv + colSi, currY + 4.2, left + colN + colRap + colEv + colSi, currY + headerH);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.2);
+  doc.setFontSize(7.0);
   doc.text('N°', left + colN / 2, currY + 5.2, { align: 'center' });
-  doc.text('EVIDENCIAS', left + colN + colEv / 2, currY + 5.2, { align: 'center' });
+  doc.setFontSize(5.8);
+  doc.text('RESULTADO DE APRENDIZAJE', left + colN + colRap / 2, currY + 5.2, { align: 'center' });
+  doc.setFontSize(7.0);
+  doc.text('EVIDENCIAS', left + colN + colRap + colEv / 2, currY + 5.2, { align: 'center' });
 
   // APROBÓ / PRESENTÓ EVIDENCIA
   doc.setFontSize(4.6);
-  doc.text('APROBÓ / PRESENTÓ', left + colN + colEv + (colSi + colNo) / 2, currY + 2.2, {
+  doc.text('APROBÓ / PRESENTÓ', left + colN + colRap + colEv + (colSi + colNo) / 2, currY + 2.2, {
     align: 'center'
   });
-  doc.text('EVIDENCIA', left + colN + colEv + (colSi + colNo) / 2, currY + 3.7, {
+  doc.text('EVIDENCIA', left + colN + colRap + colEv + (colSi + colNo) / 2, currY + 3.7, {
     align: 'center'
   });
 
   doc.setFontSize(6.8);
-  doc.text('SI', left + colN + colEv + colSi / 2, currY + 6.9, { align: 'center' });
-  doc.text('NO', left + colN + colEv + colSi + colNo / 2, currY + 6.9, { align: 'center' });
+  doc.text('SI', left + colN + colRap + colEv + colSi / 2, currY + 6.9, { align: 'center' });
+  doc.text('NO', left + colN + colRap + colEv + colSi + colNo / 2, currY + 6.9, { align: 'center' });
 
-  doc.setFontSize(7.2);
-  doc.text('OBSERVACIONES', left + colN + colEv + colSi + colNo + colObs / 2, currY + 5.2, { align: 'center' });
+  doc.setFontSize(7.0);
+  doc.text('OBSERVACIONES', left + colN + colRap + colEv + colSi + colNo + colObs / 2, currY + 5.2, { align: 'center' });
 }
 
 /**

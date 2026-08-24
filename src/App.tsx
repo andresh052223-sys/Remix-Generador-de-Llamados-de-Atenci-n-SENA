@@ -145,6 +145,7 @@ export default function App() {
           <EvidenceManager
             evidences={evidences}
             setEvidences={setEvidences}
+            generalInfo={generalInfo}
             onBack={() => setActiveTab('general')}
             onContinue={() => setActiveTab('matriz')}
           />
@@ -156,6 +157,7 @@ export default function App() {
             setApprentices={setApprentices}
             evidences={evidences}
             setEvidences={setEvidences}
+            generalInfo={generalInfo}
             onSelectApprenticeForPreview={(app) => {
               setSelectedApprentice(app);
               setActiveTab('vista-previa');
