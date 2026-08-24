@@ -1,0 +1,8 @@
+{
+  "name": "Remix Generador de Llamados de Atención SENA",
+  "description": "Generador y gestor de llamados de atención para aprendices SENA en formato PDF individual y por lotes con importación masiva y evidencias.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
