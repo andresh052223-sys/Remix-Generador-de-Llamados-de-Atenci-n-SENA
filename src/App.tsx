@@ -35,7 +35,14 @@ export default function App() {
   const [signatureConfig, setSignatureConfig] = useState<SignatureConfig>(() => {
     try {
       const saved = localStorage.getItem(PROGRAM_STORAGE_KEYS.LEGACY_SIGNATURE);
-      return saved ? JSON.parse(saved) : INITIAL_SIGNATURE_CONFIG;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.instructorName && parsed.instructorName.toLowerCase().includes('huertas')) {
+          parsed.instructorName = '';
+        }
+        return parsed;
+      }
+      return INITIAL_SIGNATURE_CONFIG;
     } catch {
       return INITIAL_SIGNATURE_CONFIG;
     }
@@ -75,6 +82,7 @@ export default function App() {
         ...prev,
         [activeSlotNumber]: {
           ...slot,
+          customName: newGeneralInfo.programa?.trim() || slot.customName,
           generalInfo: newGeneralInfo,
           lastModified: new Date().toISOString()
         }
@@ -139,6 +147,10 @@ export default function App() {
         [slotNumber]: {
           ...slot,
           customName: newName,
+          generalInfo: {
+            ...slot.generalInfo,
+            programa: newName
+          },
           lastModified: new Date().toISOString()
         }
       };
@@ -216,7 +228,7 @@ export default function App() {
         evidencesCount={evidences.length}
         codigoFicha={generalInfo.codigoFicha}
         activeSlotNumber={activeSlotNumber}
-        activeProgramName={currentSlot.customName || generalInfo.programa}
+        activeProgramName={generalInfo.programa?.trim() || currentSlot.customName || `Programa ${activeSlotNumber}`}
         onOpenBulkDownload={() => setIsBulkDownloadOpen(true)}
       />
 
@@ -236,6 +248,7 @@ export default function App() {
           <GeneralInfoForm
             generalInfo={generalInfo}
             setGeneralInfo={setGeneralInfo}
+            activeSlotNumber={activeSlotNumber}
             signatureConfig={signatureConfig}
             setSignatureConfig={setSignatureConfig}
             onOpenSignatureModal={() => setIsSignatureModalOpen(true)}

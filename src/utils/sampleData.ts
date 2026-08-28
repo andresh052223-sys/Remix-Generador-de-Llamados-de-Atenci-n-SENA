@@ -5,9 +5,9 @@ export const INITIAL_GENERAL_INFO: GeneralInfo = {
   codigoFicha: '3466175',
   centroFormacion: 'Centro de Comercio y Servicios Regional Tolima',
   modalidad: 'Virtual',
-  nombreInstructorAsignado: 'Andres Arturo Huertas Carreño',
+  nombreInstructorAsignado: '',
   transversal: 'Transversal Inglés',
-  nombreInstructorLlamado: 'Andres Arturo Huertas Carreño',
+  nombreInstructorLlamado: '',
   fechaEntregaLlamado: new Date().toISOString().split('T')[0],
   fechaLimiteEvidencias: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   motivo: 'Incumplimiento en la presentación de evidencias solicitadas en el plazo establecido.',
@@ -224,7 +224,7 @@ export const SAMPLE_NAMES_80 = [
 
 export const INITIAL_SIGNATURE_CONFIG: SignatureConfig = {
   instructorSignatureType: 'text',
-  instructorName: 'Andres Arturo Huertas Carreño',
+  instructorName: '',
   coordinadorName: '',
   subdirectorName: ''
 };

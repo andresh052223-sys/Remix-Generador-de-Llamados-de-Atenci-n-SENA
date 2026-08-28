@@ -42,7 +42,7 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
   const handleStartEdit = (slotNumber: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingSlotNumber(slotNumber);
-    setTempName(programSlots[slotNumber]?.customName || programSlots[slotNumber]?.generalInfo?.programa || `Programa ${slotNumber}`);
+    setTempName(programSlots[slotNumber]?.generalInfo?.programa?.trim() || programSlots[slotNumber]?.customName || `Programa ${slotNumber}`);
   };
 
   const handleSaveEdit = (slotNumber: number, e?: React.FormEvent) => {
@@ -58,8 +58,8 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
       alert('El programa de origen y destino deben ser diferentes.');
       return;
     }
-    const sourceName = programSlots[copySource]?.customName || `Programa ${copySource}`;
-    const targetName = programSlots[copyTarget]?.customName || `Programa ${copyTarget}`;
+    const sourceName = programSlots[copySource]?.generalInfo?.programa?.trim() || programSlots[copySource]?.customName || `Programa ${copySource}`;
+    const targetName = programSlots[copyTarget]?.generalInfo?.programa?.trim() || programSlots[copyTarget]?.customName || `Programa ${copyTarget}`;
 
     if (window.confirm(`¿Copiar la información de ${sourceName} hacia ${targetName}? Los datos actuales del Programa ${copyTarget} serán reemplazados.`)) {
       onCopySlot(copySource, copyTarget);
@@ -118,8 +118,8 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
           {[1, 2, 3, 4, 5].map((slotNum) => {
             const slot = programSlots[slotNum];
             const isActive = slotNum === activeSlotNumber;
-            const programName = slot?.customName || slot?.generalInfo?.programa || `Programa ${slotNum}`;
-            const ficha = slot?.generalInfo?.codigoFicha || 'Sin ficha';
+            const programName = slot?.generalInfo?.programa?.trim() || slot?.customName || `Programa ${slotNum}`;
+            const ficha = slot?.generalInfo?.codigoFicha?.trim() || 'Sin ficha';
             const apprenticesCount = slot?.apprentices?.length || 0;
             const evidencesCount = slot?.evidences?.length || 0;
 
@@ -146,16 +146,26 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
                   </span>
 
                   {isActive ? (
-                    <span className="text-[9px] font-black uppercase bg-black text-emerald-300 px-1.5 py-0.5 border border-black flex items-center gap-1 animate-pulse">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                      EN EDICIÓN
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-black uppercase bg-black text-emerald-300 px-1.5 py-0.5 border border-black flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        ACTIVO
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleStartEdit(slotNum, e)}
+                        className="text-black hover:text-slate-800 text-[10px] p-0.5 rounded hover:bg-emerald-300 transition-colors"
+                        title="Modificar nombre directamente"
+                      >
+                        <Edit2 className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
                   ) : (
                     <button
                       type="button"
                       onClick={(e) => handleStartEdit(slotNum, e)}
-                      className="text-slate-400 hover:text-white text-[10px] p-0.5 rounded hover:bg-slate-700"
-                      title="Cambiar etiqueta"
+                      className="text-slate-400 hover:text-white text-[10px] p-0.5 rounded hover:bg-slate-700 transition-colors"
+                      title="Modificar nombre directamente"
                     >
                       <Edit2 className="h-2.5 w-2.5" />
                     </button>
@@ -238,11 +248,11 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-slate-400 font-bold uppercase text-[10px]">Programa Activo:</span>
             <span className="font-black text-emerald-400">
-              Programa {activeSlotNumber}: {activeSlot?.customName || activeSlot?.generalInfo?.programa}
+              Programa {activeSlotNumber}: {activeSlot?.generalInfo?.programa?.trim() || activeSlot?.customName || `Programa ${activeSlotNumber}`}
             </span>
             <span className="text-slate-500">•</span>
             <span className="font-mono text-slate-300 font-bold">
-              Ficha {activeSlot?.generalInfo?.codigoFicha}
+              Ficha: {activeSlot?.generalInfo?.codigoFicha?.trim() || 'Sin ficha'}
             </span>
             <span className="text-slate-500">•</span>
             <span className="text-slate-300 font-medium">
@@ -250,8 +260,9 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
             </span>
           </div>
 
-          <div className="text-[10px] text-slate-400 italic">
-            Toda la información se guarda automáticamente para este programa.
+          <div className="text-[10px] text-emerald-300/90 font-medium flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            <span>Sincronizado en tiempo real con Datos del Programa</span>
           </div>
         </div>
       </div>
@@ -290,7 +301,7 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
                 >
                   {[1, 2, 3, 4, 5].map((s) => (
                     <option key={s} value={s}>
-                      Programa {s}: {programSlots[s]?.customName || programSlots[s]?.generalInfo?.programa} (Ficha {programSlots[s]?.generalInfo?.codigoFicha})
+                      Programa {s}: {programSlots[s]?.generalInfo?.programa?.trim() || programSlots[s]?.customName || `Programa ${s}`} (Ficha {programSlots[s]?.generalInfo?.codigoFicha?.trim() || 'Sin ficha'})
                     </option>
                   ))}
                 </select>
@@ -311,7 +322,7 @@ export const ProgramSelector: React.FC<ProgramSelectorProps> = ({
                 >
                   {[1, 2, 3, 4, 5].map((s) => (
                     <option key={s} value={s}>
-                      Programa {s}: {programSlots[s]?.customName || programSlots[s]?.generalInfo?.programa} (Ficha {programSlots[s]?.generalInfo?.codigoFicha})
+                      Programa {s}: {programSlots[s]?.generalInfo?.programa?.trim() || programSlots[s]?.customName || `Programa ${s}`} (Ficha {programSlots[s]?.generalInfo?.codigoFicha?.trim() || 'Sin ficha'})
                     </option>
                   ))}
                 </select>

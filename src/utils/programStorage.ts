@@ -26,7 +26,7 @@ export function getDefaultProgramSlots(): ProgramSlotsMap {
   const slot1: ProgramSlot = {
     id: 'prog-1',
     slotNumber: 1,
-    customName: 'Desarrollo de Videojuegos',
+    customName: INITIAL_GENERAL_INFO.programa,
     generalInfo: { ...INITIAL_GENERAL_INFO },
     evidences: JSON.parse(JSON.stringify(INITIAL_EVIDENCES)),
     apprentices: JSON.parse(JSON.stringify(INITIAL_APPRENTICES)),
@@ -39,9 +39,9 @@ export function getDefaultProgramSlots(): ProgramSlotsMap {
     codigoFicha: '2827190',
     centroFormacion: 'Centro de Comercio y Servicios Regional Tolima',
     modalidad: 'Virtual',
-    nombreInstructorAsignado: 'Andres Arturo Huertas Carreño',
+    nombreInstructorAsignado: '',
     transversal: 'Transversal Inglés',
-    nombreInstructorLlamado: 'Andres Arturo Huertas Carreño',
+    nombreInstructorLlamado: '',
     fechaEntregaLlamado: today,
     fechaLimiteEvidencias: limitDate,
     motivo: 'Incumplimiento en la presentación de evidencias solicitadas en el plazo establecido.',
@@ -155,7 +155,7 @@ export function getDefaultProgramSlots(): ProgramSlotsMap {
   const slot2: ProgramSlot = {
     id: 'prog-2',
     slotNumber: 2,
-    customName: 'ADSO - Software',
+    customName: slot2GeneralInfo.programa,
     generalInfo: slot2GeneralInfo,
     evidences: slot2Evidences,
     apprentices: slot2Apprentices,
@@ -245,7 +245,7 @@ export function getDefaultProgramSlots(): ProgramSlotsMap {
   const slot3: ProgramSlot = {
     id: 'prog-3',
     slotNumber: 3,
-    customName: 'Gestión Contable',
+    customName: slot3GeneralInfo.programa,
     generalInfo: slot3GeneralInfo,
     evidences: slot3Evidences,
     apprentices: slot3Apprentices,
@@ -335,7 +335,7 @@ export function getDefaultProgramSlots(): ProgramSlotsMap {
   const slot4: ProgramSlot = {
     id: 'prog-4',
     slotNumber: 4,
-    customName: 'Animación 3D',
+    customName: slot4GeneralInfo.programa,
     generalInfo: slot4GeneralInfo,
     evidences: slot4Evidences,
     apprentices: slot4Apprentices,
@@ -425,7 +425,7 @@ export function getDefaultProgramSlots(): ProgramSlotsMap {
   const slot5: ProgramSlot = {
     id: 'prog-5',
     slotNumber: 5,
-    customName: 'Redes y Ciberseguridad',
+    customName: slot5GeneralInfo.programa,
     generalInfo: slot5GeneralInfo,
     evidences: slot5Evidences,
     apprentices: slot5Apprentices,
@@ -456,6 +456,24 @@ export function loadAllProgramSlots(): ProgramSlotsMap {
     for (let i = 1; i <= MAX_PROGRAM_SLOTS; i++) {
       if (!slots[i] || !slots[i].generalInfo) {
         slots[i] = defaults[i];
+      } else {
+        // Keep customName synced with the current programa so predefined templates never block edits
+        if (slots[i].generalInfo?.programa) {
+          slots[i].customName = slots[i].generalInfo.programa;
+        }
+        // If the slot has the previous hardcoded predefined instructor name, reset to empty
+        if (
+          slots[i].generalInfo.nombreInstructorAsignado &&
+          slots[i].generalInfo.nombreInstructorAsignado.toLowerCase().includes('huertas')
+        ) {
+          slots[i].generalInfo.nombreInstructorAsignado = '';
+        }
+        if (
+          slots[i].generalInfo.nombreInstructorLlamado &&
+          slots[i].generalInfo.nombreInstructorLlamado.toLowerCase().includes('huertas')
+        ) {
+          slots[i].generalInfo.nombreInstructorLlamado = '';
+        }
       }
     }
 
@@ -467,6 +485,12 @@ export function loadAllProgramSlots(): ProgramSlotsMap {
     if (legacyGen && !rawStored) {
       try {
         slots[1].generalInfo = JSON.parse(legacyGen);
+        if (slots[1].generalInfo?.nombreInstructorAsignado?.toLowerCase().includes('huertas')) {
+          slots[1].generalInfo.nombreInstructorAsignado = '';
+        }
+        if (slots[1].generalInfo?.nombreInstructorLlamado?.toLowerCase().includes('huertas')) {
+          slots[1].generalInfo.nombreInstructorLlamado = '';
+        }
       } catch {}
     }
     if (legacyEvs && !rawStored) {

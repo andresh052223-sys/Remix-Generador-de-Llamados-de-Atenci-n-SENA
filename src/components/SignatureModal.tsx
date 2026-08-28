@@ -247,7 +247,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
             type="text"
             value={instructorName}
             onChange={(e) => setInstructorName(e.target.value)}
-            placeholder="Ej: Andrés Arturo Huertas Carreño"
+            placeholder="Ej: Nombre y apellidos del instructor"
             className="w-full p-2 text-xs font-bold border-2 border-black bg-slate-50 focus:bg-white focus:outline-none"
           />
         </div>

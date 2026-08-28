@@ -10,6 +10,7 @@ interface GeneralInfoFormProps {
   setSignatureConfig?: React.Dispatch<React.SetStateAction<SignatureConfig>>;
   onOpenSignatureModal: () => void;
   onContinue: () => void;
+  activeSlotNumber?: number;
 }
 
 const MOTIVO_PRESETS = [
@@ -40,7 +41,8 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
   signatureConfig,
   setSignatureConfig,
   onOpenSignatureModal,
-  onContinue
+  onContinue,
+  activeSlotNumber = 1
 }) => {
   const directSignatureInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -203,14 +205,29 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
         <div className="lg:col-span-2 space-y-6">
           {/* Card 1: Datos de la Ficha y Programa */}
           <div className="bg-white border-2 border-black p-6 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)]">
-            <div className="flex items-center justify-between border-b-2 border-black pb-3 mb-5">
-              <h3 className="text-sm font-black uppercase tracking-wider text-black flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between border-b-2 border-black pb-3 mb-5 gap-2">
+              <div className="flex items-center gap-2">
                 <span className="w-3 h-3 bg-black"></span>
-                Identificación del Programa y Ficha
-              </h3>
-              <span className="text-[10px] font-mono font-bold bg-slate-100 border border-black px-2 py-0.5 uppercase">
-                Campos Obligatorios (*)
-              </span>
+                <h3 className="text-sm font-black uppercase tracking-wider text-black">
+                  Identificación del Programa y Ficha
+                </h3>
+                <span className="text-[10px] font-black uppercase bg-emerald-400 text-black px-2 py-0.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+                  Programa {activeSlotNumber}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Actualización en tiempo real
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-slate-100 border border-black px-2 py-0.5 uppercase">
+                  Campos Obligatorios (*)
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border-l-4 border-emerald-500 p-2.5 mb-4 text-xs text-slate-700 font-medium">
+              <strong className="font-bold text-black">Sincronización activa:</strong> Cualquier cambio en el nombre del programa o número de ficha se reflejará inmediatamente en el menú superior de los 5 programas y en todos los llamados generados.
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -284,7 +301,7 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
                       handleChange('nombreInstructorLlamado', e.target.value);
                     }
                   }}
-                  placeholder="Ej: Andres Arturo Huertas Carreño"
+                  placeholder="Ej: Nombre y apellidos del instructor"
                   className="w-full p-3 text-sm font-semibold bg-slate-50 border-2 border-black focus:bg-white focus:outline-none transition-all"
                 />
               </div>
@@ -343,7 +360,7 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
                   type="text"
                   value={generalInfo.nombreInstructorLlamado}
                   onChange={(e) => handleChange('nombreInstructorLlamado', e.target.value)}
-                  placeholder="Ej: Andres Arturo Huertas Carreño"
+                  placeholder="Ej: Nombre y apellidos del instructor"
                   className="w-full p-3 text-sm font-semibold bg-slate-50 border-2 border-black focus:bg-white focus:outline-none transition-all"
                 />
               </div>
