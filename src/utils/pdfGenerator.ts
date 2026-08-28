@@ -38,23 +38,35 @@ export async function buildApprenticePdf(
   // =============================================================
   if (logoDataUrl) {
     try {
-      const logoWidth = 17;
-      const logoHeight = 18.6;
+      const logoWidth = 15;
+      const logoHeight = 16.5;
       const logoX = left + (contentWidth - logoWidth) / 2;
       const isPng = logoDataUrl.startsWith('data:image/png') || !logoDataUrl.startsWith('data:image/jpeg');
       doc.addImage(logoDataUrl, isPng ? 'PNG' : 'JPEG', logoX, currY, logoWidth, logoHeight);
-      currY += logoHeight + 2;
+      currY += logoHeight + 1.8;
     } catch {
-      currY += 12;
+      currY += 10;
     }
   } else {
-    currY += 12;
+    currY += 10;
   }
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
   doc.setTextColor(0, 0, 0);
-  doc.text('LLAMADO DE ATENCION', left + contentWidth / 2, currY + 1, { align: 'center' });
+
+  // Line 1: Centro Comercio y Servicios
+  doc.setFontSize(9.5);
+  doc.text('Centro Comercio y Servicios', left + contentWidth / 2, currY + 0.8, { align: 'center' });
+  currY += 3.8;
+
+  // Line 2: Regional Tolima
+  doc.setFontSize(8.5);
+  doc.text('Regional Tolima', left + contentWidth / 2, currY + 0.8, { align: 'center' });
+  currY += 4.2;
+
+  // Line 3: LLAMADO DE ATENCION
+  doc.setFontSize(10.5);
+  doc.text('LLAMADO DE ATENCION', left + contentWidth / 2, currY + 0.8, { align: 'center' });
   currY += 4.5;
 
   // =============================================================
@@ -167,16 +179,24 @@ export async function buildApprenticePdf(
 
   // Row 4: Motivo
   const colMotivoLabel = 26;
-  const r4H = 7.0;
+  const motivoAvailableWidth = contentWidth - colMotivoLabel - 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  const motivoLines = doc.splitTextToSize(generalInfo.motivo || '', motivoAvailableWidth);
+  const r4H = Math.max(7.0, motivoLines.length * 2.8 + 3.0);
   doc.rect(left, currY, contentWidth, r4H);
   doc.line(left + colMotivoLabel, currY, left + colMotivoLabel, currY + r4H);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('Motivo', left + 1.5, currY + 4.6);
+  doc.setFontSize(7.2);
+  doc.text('Motivo', left + 1.5, currY + 4.4);
   doc.setFont('helvetica', 'normal');
-  doc.text(generalInfo.motivo || '', left + colMotivoLabel + 2, currY + 4.6, {
-    maxWidth: contentWidth - colMotivoLabel - 4
+  doc.setFontSize(6.5);
+  const textStartY = r4H > 7.0 ? currY + 3.4 : currY + 4.2;
+  motivoLines.forEach((line: string, idx: number) => {
+    doc.text(line, left + colMotivoLabel + 2, textStartY + idx * 2.8);
   });
+  doc.setFontSize(7.2);
   currY += r4H;
 
   // Row 5: Instructor que hace el llamado de atencion
@@ -378,23 +398,29 @@ export async function buildApprenticePdf(
   doc.setTextColor(0, 0, 0);
   currY += r7H;
 
-  // Row 8: Observaciones que hace el aprendiz
+  // Row 8: Observaciones que hace el aprendiz (doble del tamaño original: 15.0 mm)
   const colObsLabel = 54;
-  const r8H = 7.5;
+  const baseR8H = 15.0; // Doble del tamaño original (7.5 mm -> 15.0 mm)
+  const obsText = apprentice.observacionAprendizEspecifica || apprentice.observacionesEspecificas || generalInfo.observacionesAprendiz || '';
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  const obsLines = obsText ? doc.splitTextToSize(obsText, contentWidth - colObsLabel - 4) : [];
+  const r8H = Math.max(baseR8H, obsLines.length * 2.8 + 4.0);
+
   doc.rect(left, currY, contentWidth, r8H);
   doc.line(left + colObsLabel, currY, left + colObsLabel, currY + r8H);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.2);
-  doc.text('Observaciones que hace el aprendiz:', left + 1.5, currY + 4.8);
+  doc.text('Observaciones que hace el aprendiz:', left + 1.5, currY + 5.0);
   doc.setFont('helvetica', 'normal');
-  const obsText = apprentice.observacionAprendizEspecifica || generalInfo.observacionesAprendiz || '';
-  if (obsText) {
-    doc.text(obsText, left + colObsLabel + 2, currY + 4.8, {
-      maxWidth: contentWidth - colObsLabel - 4
+  doc.setFontSize(6.5);
+  if (obsLines.length > 0) {
+    obsLines.forEach((line: string, idx: number) => {
+      doc.text(line, left + colObsLabel + 2, currY + 4.5 + idx * 2.8);
     });
   }
-  currY += r8H + 3.5;
+  currY += r8H + 3.0;
 
   // =============================================================
   // 3. Evidence Table (WITH RESULTADO DE APRENDIZAJE COLUMN)

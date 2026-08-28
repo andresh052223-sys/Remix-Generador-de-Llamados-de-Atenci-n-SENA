@@ -1031,6 +1031,32 @@ export const ApprenticeManager: React.FC<ApprenticeManagerProps> = ({
                             placeholder="Dejar en blanco para usar el plan de mejoramiento general..."
                             className="w-full p-2 text-xs font-medium border-2 border-black bg-white focus:outline-none"
                           />
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            <span className="text-[9px] font-bold text-slate-500">Rápido:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateApprentice(app.id, 'planMejoramientoEspecifico', 'El aprendiz deberá desarrollar y entregar la totalidad de las evidencias identificadas como NO o en estado de corrección en este documento, atendiendo a los criterios de evaluación y especificaciones contempladas en la plataforma de Google Classroom.')}
+                              className="text-[9.5px] font-bold px-2 py-0.5 bg-amber-100 hover:bg-amber-300 text-slate-900 border border-black transition-all"
+                            >
+                              Google Classroom
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateApprentice(app.id, 'planMejoramientoEspecifico', 'El aprendiz deberá desarrollar y entregar la totalidad de las evidencias identificadas como NO o en estado de corrección en este documento, atendiendo a los criterios de evaluación y especificaciones de la guía de aprendizaje en la plataforma institucional.')}
+                              className="text-[9.5px] font-bold px-2 py-0.5 bg-slate-100 hover:bg-slate-300 text-slate-900 border border-black transition-all"
+                            >
+                              Plataforma Institucional
+                            </button>
+                            {app.planMejoramientoEspecifico && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateApprentice(app.id, 'planMejoramientoEspecifico', '')}
+                                className="text-[9.5px] font-bold px-2 py-0.5 bg-rose-100 hover:bg-rose-300 text-rose-900 border border-black transition-all ml-auto"
+                              >
+                                Usar Plan General
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
 

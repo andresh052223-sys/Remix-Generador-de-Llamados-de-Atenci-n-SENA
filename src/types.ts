@@ -68,3 +68,15 @@ export interface SignatureConfig {
 
 export type ActiveTab = 'general' | 'evidencias' | 'matriz' | 'aprendices' | 'vista-previa';
 
+export interface ProgramSlot {
+  id: string;
+  slotNumber: number; // 1 | 2 | 3 | 4 | 5
+  customName?: string;
+  generalInfo: GeneralInfo;
+  evidences: EvidenceItem[];
+  apprentices: Apprentice[];
+  lastModified?: string;
+}
+
+export type ProgramSlotsMap = Record<number, ProgramSlot>;
+

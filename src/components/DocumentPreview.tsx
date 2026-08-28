@@ -267,18 +267,24 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             <div className="flex flex-col justify-between min-h-[980px]">
               <div>
                 {/* Official SENA Emblem & Title */}
-                <div className="flex flex-col items-center justify-center mb-3">
-                  <div className="h-16 w-auto flex items-center justify-center">
+                <div className="flex flex-col items-center justify-center mb-3 text-center">
+                  <div className="h-14 w-auto flex items-center justify-center mb-1">
                     {generalInfo.senaLogoUrl ? (
                       <img
                         src={generalInfo.senaLogoUrl}
                         alt="Logo SENA"
-                        className="h-14 max-h-14 w-auto object-contain"
+                        className="h-12 max-h-12 w-auto object-contain"
                       />
                     ) : (
-                      <SenaLogo className="h-14 w-auto" />
+                      <SenaLogo className="h-12 w-auto" />
                     )}
                   </div>
+                  <h3 className="text-sm font-black text-black leading-tight tracking-wide">
+                    Centro Comercio y Servicios
+                  </h3>
+                  <h4 className="text-xs font-bold text-slate-800 leading-tight">
+                    Regional Tolima
+                  </h4>
                   <h2 className="text-base font-black tracking-wider text-black uppercase mt-1">
                     LLAMADO DE ATENCIÓN
                   </h2>
@@ -357,7 +363,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     <div className="col-span-2 p-1.5 font-bold border-r border-black">
                       Motivo
                     </div>
-                    <div className="col-span-10 p-1.5 text-slate-800">
+                    <div className="col-span-10 p-1.5 text-slate-800 whitespace-pre-line leading-snug">
                       {generalInfo.motivo}
                     </div>
                   </div>
@@ -437,13 +443,13 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     </div>
                   </div>
 
-                  {/* Row 8: Observaciones que hace el aprendiz */}
-                  <div className="grid grid-cols-12">
-                    <div className="col-span-4 p-1.5 font-bold border-r border-black">
+                  {/* Row 8: Observaciones que hace el aprendiz (doble del tamaño original) */}
+                  <div className="grid grid-cols-12 min-h-14">
+                    <div className="col-span-4 p-2 font-bold border-r border-black flex items-start">
                       Observaciones que hace el aprendiz:
                     </div>
-                    <div className="col-span-8 p-1.5 text-slate-600 min-h-6 text-[10.5px]">
-                      {currentApprentice.observacionesEspecificas || generalInfo.observacionesAprendiz || ''}
+                    <div className="col-span-8 p-2 text-slate-700 min-h-14 text-[10.5px] whitespace-pre-line leading-snug">
+                      {currentApprentice.observacionAprendizEspecifica || currentApprentice.observacionesEspecificas || generalInfo.observacionesAprendiz || ''}
                     </div>
                   </div>
                 </div>

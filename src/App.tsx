@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { ActiveTab, Apprentice, EvidenceItem, GeneralInfo, SignatureConfig } from './types';
+import { ActiveTab, Apprentice, EvidenceItem, GeneralInfo, SignatureConfig, ProgramSlotsMap } from './types';
+import { INITIAL_SIGNATURE_CONFIG } from './utils/sampleData';
 import {
-  INITIAL_APPRENTICES,
-  INITIAL_EVIDENCES,
-  INITIAL_GENERAL_INFO,
-  INITIAL_SIGNATURE_CONFIG
-} from './utils/sampleData';
+  loadAllProgramSlots,
+  saveAllProgramSlots,
+  loadActiveSlotNumber,
+  saveActiveSlotNumber,
+  getDefaultProgramSlots,
+  PROGRAM_STORAGE_KEYS
+} from './utils/programStorage';
 import { Header } from './components/Header';
+import { ProgramSelector } from './components/ProgramSelector';
 import { GeneralInfoForm } from './components/GeneralInfoForm';
 import { EvidenceManager } from './components/EvidenceManager';
 import { EvidenceMatrixView } from './components/EvidenceMatrixView';
@@ -16,48 +20,21 @@ import { SignatureModal } from './components/SignatureModal';
 import { BulkDownloadModal } from './components/BulkDownloadModal';
 import { RotateCcw } from 'lucide-react';
 
-const STORAGE_KEYS = {
-  GENERAL_INFO: 'sena_atencion_general_info',
-  EVIDENCES: 'sena_atencion_evidences',
-  APPRENTICES: 'sena_atencion_apprentices',
-  SIGNATURE: 'sena_atencion_signature'
-};
-
 export default function App() {
-  // 1. State for General Info
-  const [generalInfo, setGeneralInfo] = useState<GeneralInfo>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.GENERAL_INFO);
-      return saved ? JSON.parse(saved) : INITIAL_GENERAL_INFO;
-    } catch {
-      return INITIAL_GENERAL_INFO;
-    }
-  });
+  // 1. Multi-Program Slots State (5 independent programs)
+  const [programSlots, setProgramSlots] = useState<ProgramSlotsMap>(() => loadAllProgramSlots());
+  const [activeSlotNumber, setActiveSlotNumber] = useState<number>(() => loadActiveSlotNumber());
 
-  // 2. State for Evidences List
-  const [evidences, setEvidences] = useState<EvidenceItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.EVIDENCES);
-      return saved ? JSON.parse(saved) : INITIAL_EVIDENCES;
-    } catch {
-      return INITIAL_EVIDENCES;
-    }
-  });
+  // 2. Active Slot Data extraction
+  const currentSlot = programSlots[activeSlotNumber] || programSlots[1];
+  const generalInfo = currentSlot.generalInfo;
+  const evidences = currentSlot.evidences;
+  const apprentices = currentSlot.apprentices;
 
-  // 3. State for Apprentices
-  const [apprentices, setApprentices] = useState<Apprentice[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.APPRENTICES);
-      return saved ? JSON.parse(saved) : INITIAL_APPRENTICES;
-    } catch {
-      return INITIAL_APPRENTICES;
-    }
-  });
-
-  // 4. State for Signatures
+  // 3. State for Signatures (shared across programs for the instructor)
   const [signatureConfig, setSignatureConfig] = useState<SignatureConfig>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SIGNATURE);
+      const saved = localStorage.getItem(PROGRAM_STORAGE_KEYS.LEGACY_SIGNATURE);
       return saved ? JSON.parse(saved) : INITIAL_SIGNATURE_CONFIG;
     } catch {
       return INITIAL_SIGNATURE_CONFIG;
@@ -70,48 +47,161 @@ export default function App() {
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [isBulkDownloadOpen, setIsBulkDownloadOpen] = useState(false);
 
-  // Sync with Local Storage
+  // Sync Signature Config with Local Storage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEYS.GENERAL_INFO, JSON.stringify(generalInfo));
-    } catch {}
-  }, [generalInfo]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.EVIDENCES, JSON.stringify(evidences));
-    } catch {}
-  }, [evidences]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.APPRENTICES, JSON.stringify(apprentices));
-    } catch {}
-  }, [apprentices]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.SIGNATURE, JSON.stringify(signatureConfig));
+      localStorage.setItem(PROGRAM_STORAGE_KEYS.LEGACY_SIGNATURE, JSON.stringify(signatureConfig));
     } catch {}
   }, [signatureConfig]);
 
-  // Keep selected apprentice synced if list changes
+  // Keep selected apprentice synced if list changes or when switching active program slot
   useEffect(() => {
-    if (apprentices.length > 0) {
-      if (!selectedApprentice || !apprentices.some((a) => a.id === selectedApprentice.id)) {
-        setSelectedApprentice(apprentices[0]);
+    const currentApprentices = currentSlot?.apprentices || [];
+    if (currentApprentices.length > 0) {
+      if (!selectedApprentice || !currentApprentices.some((a) => a.id === selectedApprentice.id)) {
+        setSelectedApprentice(currentApprentices[0]);
       }
+    } else {
+      setSelectedApprentice(null);
     }
-  }, [apprentices, selectedApprentice]);
+  }, [activeSlotNumber, currentSlot?.apprentices]);
+
+  // Setters bound directly to the active program slot
+  const setGeneralInfo: React.Dispatch<React.SetStateAction<GeneralInfo>> = (action) => {
+    setProgramSlots((prev) => {
+      const slot = prev[activeSlotNumber] || prev[1];
+      const newGeneralInfo = typeof action === 'function' ? action(slot.generalInfo) : action;
+      const updated: ProgramSlotsMap = {
+        ...prev,
+        [activeSlotNumber]: {
+          ...slot,
+          generalInfo: newGeneralInfo,
+          lastModified: new Date().toISOString()
+        }
+      };
+      saveAllProgramSlots(updated);
+      return updated;
+    });
+  };
+
+  const setEvidences: React.Dispatch<React.SetStateAction<EvidenceItem[]>> = (action) => {
+    setProgramSlots((prev) => {
+      const slot = prev[activeSlotNumber] || prev[1];
+      const newEvidences = typeof action === 'function' ? action(slot.evidences) : action;
+      const updated: ProgramSlotsMap = {
+        ...prev,
+        [activeSlotNumber]: {
+          ...slot,
+          evidences: newEvidences,
+          lastModified: new Date().toISOString()
+        }
+      };
+      saveAllProgramSlots(updated);
+      return updated;
+    });
+  };
+
+  const setApprentices: React.Dispatch<React.SetStateAction<Apprentice[]>> = (action) => {
+    setProgramSlots((prev) => {
+      const slot = prev[activeSlotNumber] || prev[1];
+      const newApprentices = typeof action === 'function' ? action(slot.apprentices) : action;
+      const updated: ProgramSlotsMap = {
+        ...prev,
+        [activeSlotNumber]: {
+          ...slot,
+          apprentices: newApprentices,
+          lastModified: new Date().toISOString()
+        }
+      };
+      saveAllProgramSlots(updated);
+      return updated;
+    });
+  };
+
+  // Program Slot Management Handlers
+  const handleSelectSlot = (slotNumber: number) => {
+    setActiveSlotNumber(slotNumber);
+    saveActiveSlotNumber(slotNumber);
+    const targetSlot = programSlots[slotNumber];
+    if (targetSlot && targetSlot.apprentices && targetSlot.apprentices.length > 0) {
+      setSelectedApprentice(targetSlot.apprentices[0]);
+    } else {
+      setSelectedApprentice(null);
+    }
+  };
+
+  const handleUpdateSlotCustomName = (slotNumber: number, newName: string) => {
+    setProgramSlots((prev) => {
+      const slot = prev[slotNumber];
+      if (!slot) return prev;
+      const updated: ProgramSlotsMap = {
+        ...prev,
+        [slotNumber]: {
+          ...slot,
+          customName: newName,
+          lastModified: new Date().toISOString()
+        }
+      };
+      saveAllProgramSlots(updated);
+      return updated;
+    });
+  };
+
+  const handleResetSlot = (slotNumber: number) => {
+    const defaults = getDefaultProgramSlots();
+    const defaultSlot = defaults[slotNumber];
+    if (!defaultSlot) return;
+
+    setProgramSlots((prev) => {
+      const updated: ProgramSlotsMap = {
+        ...prev,
+        [slotNumber]: {
+          ...defaultSlot,
+          lastModified: new Date().toISOString()
+        }
+      };
+      saveAllProgramSlots(updated);
+      return updated;
+    });
+
+    if (slotNumber === activeSlotNumber) {
+      setSelectedApprentice(defaultSlot.apprentices[0] || null);
+    }
+  };
+
+  const handleCopySlot = (sourceSlotNumber: number, targetSlotNumber: number) => {
+    const sourceSlot = programSlots[sourceSlotNumber];
+    if (!sourceSlot) return;
+
+    setProgramSlots((prev) => {
+      const targetExisting = prev[targetSlotNumber];
+      const updated: ProgramSlotsMap = {
+        ...prev,
+        [targetSlotNumber]: {
+          id: `prog-${targetSlotNumber}`,
+          slotNumber: targetSlotNumber,
+          customName: targetExisting?.customName || `Copia de ${sourceSlot.customName || `P${sourceSlotNumber}`}`,
+          generalInfo: JSON.parse(JSON.stringify(sourceSlot.generalInfo)),
+          evidences: JSON.parse(JSON.stringify(sourceSlot.evidences)),
+          apprentices: JSON.parse(JSON.stringify(sourceSlot.apprentices)),
+          lastModified: new Date().toISOString()
+        }
+      };
+      saveAllProgramSlots(updated);
+      return updated;
+    });
+  };
 
   const handleResetToDefaultSample = () => {
-    if (window.confirm('¿Desea restaurar los datos de ejemplo del formato SENA?')) {
-      setGeneralInfo(INITIAL_GENERAL_INFO);
-      setEvidences(INITIAL_EVIDENCES);
-      setApprentices(INITIAL_APPRENTICES);
+    if (window.confirm('¿Desea restaurar todos los 5 programas de formación a sus valores de ejemplo predeterminados?')) {
+      const defaults = getDefaultProgramSlots();
+      setProgramSlots(defaults);
+      saveAllProgramSlots(defaults);
+      setActiveSlotNumber(1);
+      saveActiveSlotNumber(1);
+      setSelectedApprentice(defaults[1].apprentices[0] || null);
       setSignatureConfig(INITIAL_SIGNATURE_CONFIG);
-      setSelectedApprentice(INITIAL_APPRENTICES[0]);
-      localStorage.clear();
+      localStorage.setItem(PROGRAM_STORAGE_KEYS.LEGACY_SIGNATURE, JSON.stringify(INITIAL_SIGNATURE_CONFIG));
     }
   };
 
@@ -125,7 +215,19 @@ export default function App() {
         apprenticesCount={apprentices.length}
         evidencesCount={evidences.length}
         codigoFicha={generalInfo.codigoFicha}
+        activeSlotNumber={activeSlotNumber}
+        activeProgramName={currentSlot.customName || generalInfo.programa}
         onOpenBulkDownload={() => setIsBulkDownloadOpen(true)}
+      />
+
+      {/* 5-Program Selector & Management Bar */}
+      <ProgramSelector
+        activeSlotNumber={activeSlotNumber}
+        programSlots={programSlots}
+        onSelectSlot={handleSelectSlot}
+        onUpdateSlotCustomName={handleUpdateSlotCustomName}
+        onResetSlot={handleResetSlot}
+        onCopySlot={handleCopySlot}
       />
 
       {/* Main Content Area */}
@@ -201,7 +303,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-black uppercase tracking-wider">Servicio Nacional de Aprendizaje - SENA</span>
             <span>•</span>
-            <span className="text-slate-600">Generador Automatizado de Documentos PDF</span>
+            <span className="text-slate-600">Gestor de 5 Programas de Formación</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -210,10 +312,10 @@ export default function App() {
               type="button"
               onClick={handleResetToDefaultSample}
               className="flex items-center gap-1.5 text-xs font-black uppercase text-black hover:text-emerald-600 transition underline"
-              title="Restaurar ejemplo predeterminado"
+              title="Restaurar los 5 programas con datos de ejemplo predeterminados"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Restaurar Datos de Ejemplo
+              Restaurar 5 Programas de Ejemplo
             </button>
           </div>
         </div>

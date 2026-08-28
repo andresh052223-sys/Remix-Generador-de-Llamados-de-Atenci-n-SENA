@@ -13,6 +13,7 @@ interface GeneralInfoFormProps {
 }
 
 const MOTIVO_PRESETS = [
+  'No cumplimiento del CAPÍTULO III. Artículo 8o. Deberes del aprendiz SENA\n6. Cumplir con todas las actividades de su proceso formativo, presentando las evidencias según la planeación pedagógica, guías de aprendizaje y cronograma, en los plazos o en la oportunidad que estas deban presentarse o reportarse, a través de los medios dispuestos para ello.',
   'Incumplimiento en la presentación de evidencias solicitadas en el plazo establecido.',
   'Bajo rendimiento académico y retraso reiterado en la entrega de actividades de aprendizaje.',
   'Inasistencia injustificada y no presentación de evidencias requeridas para la competencia.',
@@ -20,6 +21,7 @@ const MOTIVO_PRESETS = [
 ];
 
 const PLAN_ACCIONES_PRESETS = [
+  'El aprendiz deberá desarrollar y entregar la totalidad de las evidencias identificadas como NO o en estado de corrección en este documento, atendiendo a los criterios de evaluación y especificaciones contempladas en la plataforma de Google Classroom.',
   'El aprendiz deberá desarrollar y entregar la totalidad de las evidencias identificadas como NO o en estado de corrección en este documento, atendiendo a los criterios de evaluación y especificaciones de la guía de aprendizaje en la plataforma institucional.',
   'Presentar las evidencias pendientes, asistir a sesiones de asesoría y sustentación sincrónica con el instructor para validar la apropiación de conocimientos del Resultado de Aprendizaje.',
   'Elaborar taller de nivelación y corrección de las actividades no superadas, realizando la entrega a través del espacio habilitado en plataforma y participando en la retroalimentación técnica.',
@@ -504,7 +506,7 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
                 </label>
                 <textarea
                   id="input-motivo"
-                  rows={3}
+                  rows={4}
                   value={generalInfo.motivo}
                   onChange={(e) => handleChange('motivo', e.target.value)}
                   placeholder="Ej: Incumplimiento en la presentación de evidencias solicitadas en el plazo establecido."
@@ -515,19 +517,35 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
               {/* Quick Presets */}
               <div>
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">
-                  Plantillas Rápidas de Motivo:
+                  Plantillas Rápidas de Motivo (Haga clic para aplicar):
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {MOTIVO_PRESETS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleChange('motivo', preset)}
-                      className="text-left text-xs font-semibold bg-white hover:bg-emerald-300 text-slate-900 p-2.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
-                    >
-                      {preset}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {MOTIVO_PRESETS.map((preset, idx) => {
+                    const isSelected = generalInfo.motivo === preset;
+                    const isOfficialSenaRule = preset.includes('Artículo 8o');
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleChange('motivo', preset)}
+                        className={`text-left text-xs font-semibold p-3 border-2 border-black transition-all whitespace-pre-line ${
+                          isOfficialSenaRule ? 'sm:col-span-2' : ''
+                        } ${
+                          isSelected
+                            ? 'bg-emerald-400 text-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] font-bold'
+                            : 'bg-white hover:bg-emerald-100 text-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'
+                        }`}
+                      >
+                        {isOfficialSenaRule && (
+                          <span className="inline-flex items-center gap-1 bg-black text-emerald-300 text-[9px] font-black uppercase px-2 py-0.5 mb-1.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,0.5)]">
+                            <ShieldAlert className="h-3 w-3 text-amber-400" />
+                            Reglamento del Aprendiz SENA • Cap. III Art. 8 (Deberes)
+                          </span>
+                        )}
+                        <div className="leading-snug">{preset}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -644,19 +662,47 @@ export const GeneralInfoForm: React.FC<GeneralInfoFormProps> = ({
                   {/* Acciones Quick Presets */}
                   <div className="mt-2">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">
-                      Plantillas Rápidas de Acciones:
+                      Plantillas Rápidas de Acciones (Haga clic para aplicar):
                     </span>
-                    <div className="space-y-1.5">
-                      {PLAN_ACCIONES_PRESETS.map((preset, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleChange('planMejoramientoDescripcion', preset)}
-                          className="w-full text-left text-xs font-semibold bg-white hover:bg-emerald-100 text-slate-800 p-2 border border-black transition-all block"
-                        >
-                          • {preset}
-                        </button>
-                      ))}
+                    <div className="space-y-2">
+                      {PLAN_ACCIONES_PRESETS.map((preset, idx) => {
+                        const isSelected = (generalInfo.planMejoramientoDescripcion || '') === preset;
+                        const isClassroom = preset.toLowerCase().includes('google classroom');
+                        const isSenaPlatform = preset.toLowerCase().includes('plataforma institucional');
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleChange('planMejoramientoDescripcion', preset)}
+                            className={`w-full text-left text-xs p-2.5 border-2 border-black transition-all block ${
+                              isSelected
+                                ? 'bg-emerald-400 text-black font-bold shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                                : 'bg-white hover:bg-emerald-100 text-slate-800 font-semibold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              {isClassroom && (
+                                <span className="bg-amber-400 text-black text-[9px] font-black uppercase px-2 py-0.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+                                  Google Classroom
+                                </span>
+                              )}
+                              {isSenaPlatform && (
+                                <span className="bg-slate-200 text-slate-800 text-[9px] font-black uppercase px-2 py-0.5 border border-black">
+                                  Plataforma Institucional SENA
+                                </span>
+                              )}
+                              {isSelected && (
+                                <span className="bg-black text-emerald-300 text-[9px] font-black uppercase px-1.5 py-0.5 border border-black ml-auto">
+                                  Seleccionada
+                                </span>
+                              )}
+                            </div>
+                            <div className="leading-snug">
+                              • {preset}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
