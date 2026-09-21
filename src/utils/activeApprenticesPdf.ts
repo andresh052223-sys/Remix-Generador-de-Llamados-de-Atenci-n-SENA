@@ -88,6 +88,7 @@ export interface PlanillaPdfOptions {
   signatureConfig?: SignatureConfig;
   includeConventions?: boolean;
   fileName?: string;
+  scopeLabel?: string;
 }
 
 /**
@@ -184,7 +185,9 @@ export async function generateActiveApprenticesPlanillaPdf(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(15, 23, 42); // Slate 900
-    const fichaProgText = `FICHA: ${codigoFicha} | PROGRAMA: ${programa}`;
+    const fichaProgText = options.scopeLabel
+      ? `FICHA: ${codigoFicha} | PROGRAMA: ${programa} | ALCANCE: ${options.scopeLabel.toUpperCase()}`
+      : `FICHA: ${codigoFicha} | PROGRAMA: ${programa}`;
     doc.text(fichaProgText, headerTextX, textY);
     textY += 3.2;
 
@@ -617,7 +620,9 @@ export async function generateActiveApprenticesPlanillaPdf(
     doc.text(leftFooter, marginLeft, footerY);
 
     // Right footer: Planilla de Aprendices Activos • Generado el [Fecha/Hora]
-    const rightFooter = `Planilla de Aprendices Activos • Generado el ${generationTimeStr}`;
+    const rightFooter = options.scopeLabel
+      ? `Planilla de Aprendices Activos • ${options.scopeLabel} • Generado el ${generationTimeStr}`
+      : `Planilla de Aprendices Activos • Generado el ${generationTimeStr}`;
     doc.text(rightFooter, pageWidth - marginRight, footerY, { align: 'right' });
   }
 
