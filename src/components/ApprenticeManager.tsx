@@ -477,14 +477,19 @@ export const ApprenticeManager: React.FC<ApprenticeManagerProps> = ({
   // Confirm and Apply Excel Import
   const handleConfirmExcelImport = (
     updatedApps: Apprentice[],
-    mode: 'update_existing' | 'replace_all'
+    mode: 'update_existing' | 'replace_all',
+    updatedEvs?: EvidenceItem[]
   ) => {
     setApprentices(updatedApps);
+    if (updatedEvs && updatedEvs.length > 0 && setEvidences) {
+      setEvidences(updatedEvs);
+    }
     setCurrentPage(1);
+    const evCount = (updatedEvs || evidences).length;
     const actionText =
       mode === 'update_existing'
-        ? `¡Se actualizaron exitosamente los estados de evidencias para los aprendices desde "${excelModalResult?.fileName}"!`
-        : `¡Se importaron exitosamente ${updatedApps.length} aprendices con sus evidencias desde "${excelModalResult?.fileName}"!`;
+        ? `¡Se actualizaron exitosamente los estados de ${evCount} evidencias para los aprendices desde "${excelModalResult?.fileName}"!`
+        : `¡Se importaron exitosamente ${updatedApps.length} aprendices con ${evCount} evidencias desde "${excelModalResult?.fileName}"!`;
 
     setUploadMessage({
       type: 'success',

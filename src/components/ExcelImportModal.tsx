@@ -24,7 +24,8 @@ interface ExcelImportModalProps {
   existingApprentices: Apprentice[];
   onConfirm: (
     updatedApprentices: Apprentice[],
-    mode: 'update_existing' | 'replace_all'
+    mode: 'update_existing' | 'replace_all',
+    updatedEvidences?: EvidenceItem[]
   ) => void;
 }
 
@@ -124,7 +125,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       }));
     }
 
-    onConfirm(finalApprentices, importMode);
+    onConfirm(finalApprentices, importMode, result.updatedEvidences || currentEvidences);
     onClose();
   };
 
@@ -208,21 +209,53 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             </div>
           </div>
 
+          {/* New Evidences Alert Banner */}
+          {result.newEvidencesFound && result.newEvidencesFound.length > 0 && (
+            <div className="bg-emerald-100 border-2 border-emerald-700 p-3.5 flex items-start gap-3 shadow-[2px_2px_0px_0px_rgba(4,120,87,1)]">
+              <Sparkles className="h-5 w-5 text-emerald-800 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="text-xs font-black uppercase tracking-wider text-emerald-950 flex items-center gap-2">
+                  ¡{result.newEvidencesFound.length} Nueva(s) Evidencia(s) Reconocida(s) en el Archivo!
+                </div>
+                <div className="text-[11px] text-emerald-900 font-medium leading-relaxed">
+                  Se detectaron columnas de evidencias que amplían la matriz actual (por ejemplo:{' '}
+                  {result.newEvidencesFound.map((e) => `#${e.numero} ${e.nombre}`).join(', ')}). Al
+                  confirmar la importación, se integrarán automáticamente tanto las calificaciones como
+                  las nuevas columnas en la matriz general.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Evidence Columns Found Badge List */}
           {detectedEvidenceColumns.length > 0 && (
             <div className="bg-emerald-50 border-2 border-black p-3.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-black block mb-1.5 flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                Columnas de Evidencias Reconocidas en el Excel:
-              </span>
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-black flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                  Columnas de Evidencias Reconocidas ({detectedEvidenceColumns.length}):
+                </span>
+                {result.newEvidencesFound && result.newEvidencesFound.length > 0 && (
+                  <span className="text-[9px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 tracking-wider">
+                    +{result.newEvidencesFound.length} nueva(s) agregada(s)
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
                 {detectedEvidenceColumns.map((col, idx) => (
                   <span
                     key={idx}
-                    className="inline-flex items-center gap-1 text-[10px] font-bold bg-white text-black px-2 py-0.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                    className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
+                      col.isNew ? 'bg-emerald-200 text-emerald-950 border-emerald-800' : 'bg-white text-black'
+                    }`}
                   >
                     <span className="font-black font-mono text-emerald-700">#{col.evidenceNumero}</span>
                     <span className="truncate max-w-[150px]">{col.evidenceNombre}</span>
+                    {col.isNew && (
+                      <span className="px-1 py-0.2 bg-emerald-700 text-white text-[8px] font-black uppercase tracking-wider">
+                        NUEVA
+                      </span>
+                    )}
                   </span>
                 ))}
               </div>

@@ -35,13 +35,17 @@ export interface ParsedExcelResult {
     evidenceId: string;
     evidenceNumero: number;
     evidenceNombre: string;
+    isNew?: boolean;
   }[];
   unmappedEvidenceColumns: string[];
+  newEvidencesFound: EvidenceItem[];
+  updatedEvidences: EvidenceItem[];
   summary: {
     totalApprentices: number;
     matchedWithExisting: number;
     newApprentices: number;
     evidencesUpdated: number;
+    newEvidencesCount: number;
   };
 }
 
@@ -171,17 +175,18 @@ export async function parseExcelMatrix(
     throw new Error('El archivo Excel está vacío o no contiene filas legibles.');
   }
 
-  // Find header row (inspect first 10 rows)
+  // Find header row (inspect first 15 rows)
   let headerRowIndex = 0;
   let maxMatchedCols = 0;
 
-  for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+  for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
     const row = rawRows[r];
     if (!Array.isArray(row)) continue;
 
     let score = 0;
     row.forEach((cell) => {
-      const norm = normalizeText(String(cell));
+      const cellStr = String(cell || '').trim();
+      const norm = normalizeText(cellStr);
       if (
         norm.includes('nombre') ||
         norm.includes('aprendiz') ||
@@ -190,10 +195,15 @@ export async function parseExcelMatrix(
         norm.includes('identificacion') ||
         norm.includes('correo') ||
         norm.includes('email') ||
+        norm.includes('telefono') ||
+        norm.includes('celular') ||
         norm.includes('evidencia') ||
         norm.startsWith('ev') ||
         norm.startsWith('aa') ||
-        norm.startsWith('rap')
+        norm.startsWith('rap') ||
+        norm.startsWith('ga') ||
+        /#\s*\d+/.test(norm) ||
+        /^(?:#|\b)?\s*\d+\s*[-.:]/.test(cellStr)
       ) {
         score++;
       }
@@ -210,9 +220,56 @@ export async function parseExcelMatrix(
   const detectedEvidenceColumns: ParsedExcelResult['detectedEvidenceColumns'] = [];
   const unmappedEvidenceColumns: string[] = [];
 
+  // Track existing evidences and their claims
+  const claimedExistingIds = new Set<string>();
+  const newEvidencesCreated: EvidenceItem[] = [];
+
+  // Helper to check if a column looks like an evidence based on row values
+  const doesColumnHaveEvaluationValues = (colIdx: number): boolean => {
+    let evalCount = 0;
+    let nonEmptyCount = 0;
+    const sampleLimit = Math.min(rawRows.length, headerRowIndex + 35);
+    for (let r = headerRowIndex + 1; r < sampleLimit; r++) {
+      const row = rawRows[r];
+      if (!Array.isArray(row)) continue;
+      const val = row[colIdx];
+      if (val === undefined || val === null) continue;
+      const str = String(val).trim();
+      if (!str) continue;
+      nonEmptyCount++;
+      const normVal = normalizeText(str).toUpperCase();
+      if (
+        normVal === 'SI' ||
+        normVal === 'NO' ||
+        normVal === 'CORREGIR' ||
+        normVal === '-' ||
+        normVal === 'A' ||
+        normVal === 'D' ||
+        normVal === 'APROBADO' ||
+        normVal === 'APROBADA' ||
+        normVal === 'APROBO' ||
+        normVal === 'NO APROBADO' ||
+        normVal === 'PENDIENTE' ||
+        normVal === 'CUMPLE' ||
+        normVal === 'NO CUMPLE' ||
+        normVal === 'ENTREGADO' ||
+        normVal === 'ENTREGO' ||
+        normVal === 'C' ||
+        normVal === 'NA' ||
+        normVal === '1' ||
+        normVal === '0'
+      ) {
+        evalCount++;
+      }
+    }
+    return nonEmptyCount >= 2 && evalCount / nonEmptyCount >= 0.35;
+  };
+
   // Match columns
   headerRow.forEach((colVal, colIndex) => {
-    const headerStr = String(colVal || '').trim();
+    let headerStr = String(colVal || '').trim();
+    // Remove surrounding quotes if any (e.g. '"Evidencia GA2..."' or '""')
+    headerStr = headerStr.replace(/^["'\s]+|["'\s]+$/g, '').trim();
     const norm = normalizeText(headerStr);
 
     if (!headerStr) {
@@ -230,7 +287,8 @@ export async function parseExcelMatrix(
       norm === 'ti' ||
       norm === 'id' ||
       norm === 'dni' ||
-      norm.includes('num_doc')
+      norm.includes('num_doc') ||
+      norm.includes('numero de documento')
     ) {
       columnMappings.push({ colIndex, headerName: headerStr, type: 'documento' });
       return;
@@ -238,13 +296,16 @@ export async function parseExcelMatrix(
 
     // Check Name
     if (
-      norm.includes('nombre') ||
+      (norm.includes('nombre') ||
       norm.includes('aprendiz') ||
       norm.includes('estudiante') ||
       norm.includes('alumno') ||
       norm.includes('nombres y apellidos') ||
       norm === 'nombre' ||
-      norm === 'apellidos y nombres'
+      norm === 'nombres' ||
+      norm === 'apellidos y nombres') &&
+      !norm.includes('archivo') &&
+      !norm.includes('programa')
     ) {
       columnMappings.push({ colIndex, headerName: headerStr, type: 'nombre' });
       return;
@@ -262,65 +323,191 @@ export async function parseExcelMatrix(
       return;
     }
 
-    // Check Evidence column: match against currentEvidences
-    let matchedEvidence: EvidenceItem | undefined;
+    // Check Item/Row Sequence index (#, N°, No, Consecutivo)
+    if (
+      norm === 'item' ||
+      norm === 'no' ||
+      norm === 'no.' ||
+      norm === 'n' ||
+      norm === 'n°' ||
+      norm === 'num' ||
+      norm === 'fila' ||
+      norm === 'consecutivo' ||
+      (norm === '#' && colIndex === 0)
+    ) {
+      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
+      return;
+    }
 
+    // Check Summary columns (Totals, percentages, judgment, observations)
+    if (
+      norm.includes('total si') ||
+      norm.includes('total no') ||
+      norm.includes('total corregir') ||
+      norm.includes('total aprobado') ||
+      norm.includes('pendientes') ||
+      norm.includes('porcentaje') ||
+      norm.includes('% avance') ||
+      norm.includes('juicio') ||
+      norm.includes('observaciones especificas')
+    ) {
+      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
+      return;
+    }
+
+    // Now, check Evidence column:
     // Try by number: e.g. "#1 - ...", "#1", "1 - ...", "1. ...", "Evidencia 1", "E1", "EV01", or exact number
     const numMatch =
       headerStr.match(/^(?:#|\b)?\s*(\d+)\s*[-.:\)]/i) ||
-      headerStr.match(/(?:evidencia|evid|ev|e|#|\b)\s*(\d+)/i) ||
+      headerStr.match(/(?:evidencia|evid|ev|e|#)\s*(\d+)/i) ||
       headerStr.match(/^(\d+)$/);
 
-    if (numMatch) {
-      const evNum = parseInt(numMatch[1], 10);
-      matchedEvidence = currentEvidences.find((e) => e.numero === evNum);
+    const hasEvidenceKeywords =
+      norm.includes('evidencia') ||
+      norm.startsWith('ev') ||
+      norm.startsWith('aa') ||
+      norm.startsWith('rap') ||
+      norm.startsWith('ga') ||
+      norm.includes('ga1') ||
+      norm.includes('ga2') ||
+      norm.includes('ga3') ||
+      norm.includes('ga4') ||
+      norm.includes('ga5') ||
+      norm.includes('aa1') ||
+      norm.includes('aa2') ||
+      norm.includes('aa3') ||
+      norm.includes('aa4') ||
+      norm.includes('cuestionario') ||
+      norm.includes('video') ||
+      norm.includes('folleto') ||
+      norm.includes('cronica') ||
+      norm.includes('informe') ||
+      norm.includes('taller') ||
+      norm.includes('foro') ||
+      norm.includes('presentacion') ||
+      norm.includes('infografia') ||
+      norm.includes('bitacora') ||
+      norm.includes('estudio de caso');
+
+    const hasEvaluationData = doesColumnHaveEvaluationValues(colIndex);
+
+    const isEvidenceCol = Boolean(numMatch) || hasEvidenceKeywords || hasEvaluationData;
+
+    if (!isEvidenceCol) {
+      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
+      return;
     }
 
-    // Try by evidence name or code
+    // Evidence Column Identified!
+    let matchedEvidence: EvidenceItem | undefined;
+    let isNewEvidence = false;
+
+    // 1. Try matching by evidence number against currentEvidences
+    if (numMatch) {
+      const evNum = parseInt(numMatch[1], 10);
+      matchedEvidence = currentEvidences.find((e) => e.numero === evNum && !claimedExistingIds.has(e.id));
+    }
+
+    // 2. Try matching by evidence code like GA1-240202501-AA1-EV01 against currentEvidences
+    if (!matchedEvidence) {
+      const codeMatch = headerStr.match(/GA\d+-\d+-[A-Z0-9]+-[A-Z0-9]+/i);
+      if (codeMatch) {
+        const code = codeMatch[0].toUpperCase();
+        matchedEvidence = currentEvidences.find(
+          (e) => !claimedExistingIds.has(e.id) && e.nombre.toUpperCase().includes(code)
+        );
+      }
+    }
+
+    // 3. Try matching by normalized name inclusion against currentEvidences
     if (!matchedEvidence) {
       matchedEvidence = currentEvidences.find((e) => {
+        if (claimedExistingIds.has(e.id)) return false;
         const evNorm = normalizeText(e.nombre);
         return norm.includes(evNorm) || evNorm.includes(norm);
       });
     }
 
-    // Try by positional column order if headers say "Evidencia X"
-    if (matchedEvidence) {
-      columnMappings.push({
-        colIndex,
-        headerName: headerStr,
-        type: 'evidence',
-        evidenceId: matchedEvidence.id,
-        evidenceNumero: matchedEvidence.numero,
-        evidenceNombre: matchedEvidence.nombre
-      });
-      detectedEvidenceColumns.push({
-        headerName: headerStr,
-        evidenceId: matchedEvidence.id,
-        evidenceNumero: matchedEvidence.numero,
-        evidenceNombre: matchedEvidence.nombre
-      });
-      return;
+    // 4. Try matching sequential unclaimed evidence if no conflicting explicit number
+    if (!matchedEvidence && !numMatch) {
+      matchedEvidence = currentEvidences.find((e) => !claimedExistingIds.has(e.id));
     }
 
-    // If it looks like an evidence header but wasn't matched to existing evidences
-    if (
-      norm.includes('evidencia') ||
-      norm.startsWith('ev') ||
-      norm.startsWith('aa') ||
-      norm.startsWith('rap') ||
-      norm.includes('taller') ||
-      norm.includes('informe') ||
-      norm.includes('guia') ||
-      norm.includes('foro') ||
-      norm.includes('cuestionario')
-    ) {
-      unmappedEvidenceColumns.push(headerStr);
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
-      return;
+    // 5. IF NOT MATCHED to existing evidences (e.g. Evidence #9, or new evidence uploaded in the Excel):
+    // DYNAMICALLY CREATE A NEW EVIDENCE ITEM!
+    if (!matchedEvidence) {
+      isNewEvidence = true;
+      let assignedNumero: number;
+
+      if (numMatch) {
+        assignedNumero = parseInt(numMatch[1], 10);
+      } else {
+        const allNums = [
+          ...currentEvidences.map((e) => e.numero),
+          ...newEvidencesCreated.map((e) => e.numero)
+        ];
+        assignedNumero = (allNums.length > 0 ? Math.max(...allNums) : 0) + 1;
+      }
+
+      // Clean the name of the evidence
+      let cleanName = headerStr.replace(/^(?:#|\b)?\s*\d+\s*[-.:]\s*/i, '').trim();
+      cleanName = cleanName.replace(/^["'\s]+|["'\s]+$/g, '').trim();
+      if (!cleanName || cleanName.length < 3) {
+        cleanName = `Evidencia ${assignedNumero}. Actividad de aprendizaje.`;
+      }
+
+      // Deduce RAP index from text (GA1 -> 0, GA2 -> 1, GA3 -> 2, etc.)
+      let rapIndex: number | undefined = undefined;
+      const upperHeader = headerStr.toUpperCase();
+      if (upperHeader.includes('GA1') || upperHeader.includes('RAP1') || upperHeader.includes('AA1')) {
+        rapIndex = 0;
+      } else if (upperHeader.includes('GA2') || upperHeader.includes('RAP2') || upperHeader.includes('AA2')) {
+        rapIndex = 1;
+      } else if (upperHeader.includes('GA3') || upperHeader.includes('RAP3') || upperHeader.includes('AA3')) {
+        rapIndex = 2;
+      } else if (upperHeader.includes('GA4') || upperHeader.includes('RAP4') || upperHeader.includes('AA4')) {
+        rapIndex = 3;
+      } else if (currentEvidences.length > 0) {
+        rapIndex = currentEvidences[currentEvidences.length - 1].rapIndex ?? 0;
+      }
+
+      // Generate clean ID
+      const candidateId = `ev-${assignedNumero}`;
+      const idExists =
+        currentEvidences.some((e) => e.id === candidateId) ||
+        newEvidencesCreated.some((e) => e.id === candidateId);
+      const newId = idExists ? `ev-${assignedNumero}-${Date.now().toString(36).substring(2, 6)}` : candidateId;
+
+      matchedEvidence = {
+        id: newId,
+        numero: assignedNumero,
+        nombre: cleanName,
+        defaultEstado: 'NO',
+        observacion: '',
+        rapIndex
+      };
+
+      newEvidencesCreated.push(matchedEvidence);
     }
 
-    columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
+    claimedExistingIds.add(matchedEvidence.id);
+
+    columnMappings.push({
+      colIndex,
+      headerName: headerStr,
+      type: 'evidence',
+      evidenceId: matchedEvidence.id,
+      evidenceNumero: matchedEvidence.numero,
+      evidenceNombre: matchedEvidence.nombre
+    });
+
+    detectedEvidenceColumns.push({
+      headerName: headerStr,
+      evidenceId: matchedEvidence.id,
+      evidenceNumero: matchedEvidence.numero,
+      evidenceNombre: matchedEvidence.nombre,
+      isNew: isNewEvidence
+    });
   });
 
   // If no name column detected, pick first non-empty column
@@ -435,6 +622,14 @@ export async function parseExcelMatrix(
     });
   }
 
+  const updatedEvidences = [...currentEvidences];
+  newEvidencesCreated.forEach((ne) => {
+    if (!updatedEvidences.some((e) => e.id === ne.id)) {
+      updatedEvidences.push(ne);
+    }
+  });
+  updatedEvidences.sort((a, b) => a.numero - b.numero);
+
   return {
     fileName: file.name,
     sheetName,
@@ -443,11 +638,14 @@ export async function parseExcelMatrix(
     columnMappings,
     detectedEvidenceColumns,
     unmappedEvidenceColumns,
+    newEvidencesFound: newEvidencesCreated,
+    updatedEvidences,
     summary: {
       totalApprentices: parsedApprentices.length,
       matchedWithExisting: matchedWithExistingCount,
       newApprentices: newApprenticesCount,
-      evidencesUpdated: detectedEvidenceColumns.length
+      evidencesUpdated: detectedEvidenceColumns.length,
+      newEvidencesCount: newEvidencesCreated.length
     }
   };
 }
