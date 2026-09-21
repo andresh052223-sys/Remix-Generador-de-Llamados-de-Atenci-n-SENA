@@ -273,6 +273,7 @@ export default function App() {
             evidences={evidences}
             setEvidences={setEvidences}
             generalInfo={generalInfo}
+            signatureConfig={signatureConfig}
             onSelectApprenticeForPreview={(app) => {
               setSelectedApprentice(app);
               setActiveTab('vista-previa');

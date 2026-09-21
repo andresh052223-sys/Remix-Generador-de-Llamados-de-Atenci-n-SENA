@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Apprentice, EvidenceItem, EvidenceStatus, GeneralInfo } from '../types';
+import { Apprentice, EvidenceItem, EvidenceStatus, GeneralInfo, SignatureConfig } from '../types';
 import { exportEvidenceMatrixExcel, parseExcelMatrix, ParsedExcelResult } from '../utils/excelParser';
+import { downloadActiveApprenticesPlanillaPdf } from '../utils/activeApprenticesPdf';
 import { ExcelImportModal } from './ExcelImportModal';
 import { NameFormatModal } from './NameFormatModal';
 import { parseFullName, normalizeSortKey } from '../utils/nameUtils';
@@ -29,7 +30,10 @@ import {
   ArrowUpZA,
   UserCheck,
   BookOpen,
-  Award
+  Award,
+  FileDown,
+  Printer,
+  ChevronDown
 } from 'lucide-react';
 
 interface EvidenceMatrixViewProps {
@@ -38,6 +42,7 @@ interface EvidenceMatrixViewProps {
   evidences: EvidenceItem[];
   setEvidences: React.Dispatch<React.SetStateAction<EvidenceItem[]>>;
   generalInfo?: GeneralInfo;
+  signatureConfig?: SignatureConfig;
   onSelectApprenticeForPreview: (apprentice: Apprentice) => void;
   onNavigateToTab?: (tab: any) => void;
 }
@@ -50,6 +55,7 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
   evidences,
   setEvidences,
   generalInfo,
+  signatureConfig,
   onSelectApprenticeForPreview,
   onNavigateToTab
 }) => {
@@ -64,6 +70,12 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
   const [isNameFormatModalOpen, setIsNameFormatModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // PDF Planilla states
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfScope, setPdfScope] = useState<'ALL' | 'FILTERED'>('ALL');
+  const [pdfIncludeConventions, setPdfIncludeConventions] = useState(true);
 
   // Active cell quick selector popup
   const [activeCell, setActiveCell] = useState<{
@@ -351,6 +363,47 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
     setTimeout(() => setNotification(null), 4000);
   };
 
+  const handleDownloadPlanillaPdf = async (scope: 'ALL' | 'FILTERED' = pdfScope) => {
+    try {
+      setIsExportingPdf(true);
+      const targetApprentices = scope === 'FILTERED' ? displayedApprentices : sortedApprentices;
+
+      if (targetApprentices.length === 0) {
+        setNotification({
+          type: 'error',
+          text: 'No hay aprendices disponibles para generar la planilla PDF.'
+        });
+        setTimeout(() => setNotification(null), 4000);
+        setIsExportingPdf(false);
+        return;
+      }
+
+      const fileName = await downloadActiveApprenticesPlanillaPdf({
+        apprentices: targetApprentices,
+        evidences,
+        generalInfo: generalInfo || ({} as GeneralInfo),
+        signatureConfig,
+        includeConventions: pdfIncludeConventions
+      });
+
+      setNotification({
+        type: 'success',
+        text: `¡Planilla PDF "${fileName}" descargada con éxito (${targetApprentices.length} aprendices activos)!`
+      });
+      setTimeout(() => setNotification(null), 5000);
+      setIsPdfModalOpen(false);
+    } catch (err) {
+      console.error('Error generating Planilla PDF:', err);
+      setNotification({
+        type: 'error',
+        text: 'Ocurrió un error al generar la planilla en PDF. Por favor intenta de nuevo.'
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Banner - SENA Style */}
@@ -394,6 +447,44 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
               accept=".xlsx, .xls, .csv"
               className="hidden"
             />
+
+            {/* Official PDF Planilla of Active Apprentices */}
+            <div className="inline-flex items-center">
+              <button
+                id="matrix-export-pdf-btn"
+                type="button"
+                onClick={() => {
+                  if (searchTerm.trim() || statusFilter !== 'ALL') {
+                    setIsPdfModalOpen(true);
+                  } else {
+                    handleDownloadPlanillaPdf('ALL');
+                  }
+                }}
+                disabled={isExportingPdf}
+                className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-rose-50 hover:bg-rose-100 text-rose-950 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition group"
+                title="Descargar Planilla Oficial de Aprendices Activos en PDF (formato horizontal con cuadrícula de evidencias y RAPs)"
+              >
+                {isExportingPdf ? (
+                  <RefreshCw className="h-4 w-4 text-rose-700 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4 text-rose-700 group-hover:scale-110 transition-transform" />
+                )}
+                <span>{isExportingPdf ? 'Generando PDF...' : 'Descargar Planilla PDF'}</span>
+                <span className="bg-rose-200 text-rose-900 border border-rose-400 px-1 py-0.2 text-[9px] font-black rounded ml-0.5">
+                  OFICIAL
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPdfModalOpen(true)}
+                disabled={isExportingPdf}
+                className="px-2 py-2.5 bg-rose-100 hover:bg-rose-200 text-rose-950 border-2 border-l-0 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition"
+                title="Opciones avanzadas para generar la planilla PDF (todos o filtrados)"
+              >
+                <ChevronDown className="h-3.5 w-3.5 text-rose-900" />
+              </button>
+            </div>
 
             <button
               id="matrix-export-excel-btn"
@@ -557,6 +648,27 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
               </span>
             </div>
           </div>
+        </div>
+
+        {/* PDF Planilla Institutional Helper Banner */}
+        <div className="mt-3 p-3 bg-rose-50/90 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-rose-950">
+            <FileText className="h-5 w-5 text-rose-700 shrink-0" />
+            <div>
+              <span className="font-black uppercase tracking-wider text-rose-900">Planilla Oficial en PDF (Aprendices Activos):</span>
+              <span className="ml-1 text-slate-800">
+                Genere el reporte institucional en formato horizontal (Landscape) con membrete SENA, tabla por Guías de Aprendizaje, estados de evidencias (<code className="bg-emerald-200 px-1 font-bold text-emerald-950">SI</code>, <code className="bg-rose-200 px-1 font-bold text-rose-950">NO</code>, <code className="bg-amber-200 px-1 font-bold text-amber-950">CORREGIR</code>), totales de seguimiento y tabla de convenciones de RAPs.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsPdfModalOpen(true)}
+            className="self-start md:self-auto shrink-0 px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-950 border-2 border-black font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition flex items-center gap-1.5"
+          >
+            <FileDown className="h-3.5 w-3.5 text-rose-700" />
+            <span>Configurar / Descargar PDF</span>
+          </button>
         </div>
 
         {/* Live Notification Bar */}
@@ -1155,6 +1267,157 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
           setTimeout(() => setNotification(null), 4000);
         }}
       />
+
+      {/* Planilla PDF Download & Scope Modal */}
+      {isPdfModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b-2 border-black">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-100 border-2 border-black">
+                  <FileText className="h-5 w-5 text-rose-700" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black uppercase tracking-wider text-black">
+                    Planilla de Aprendices Activos (PDF)
+                  </h3>
+                  <p className="text-xs text-slate-600 font-medium">
+                    Formato oficial horizontal SENA • Registro y seguimiento de evidencias
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPdfModalOpen(false)}
+                className="p-1 hover:bg-slate-100 border border-transparent hover:border-black transition"
+              >
+                <X className="h-5 w-5 text-black" />
+              </button>
+            </div>
+
+            {/* Document Details Info Card */}
+            <div className="p-3 bg-slate-50 border-2 border-black space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span className="font-bold">Ficha:</span>
+                <span className="font-black text-black font-mono">{generalInfo?.codigoFicha || '3466175'}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span className="font-bold">Programa:</span>
+                <span className="font-bold text-black text-right line-clamp-1 max-w-[280px]">
+                  {generalInfo?.programa || 'Desarrollo de videojuegos y entornos interactivos'}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span className="font-bold">Instructor:</span>
+                <span className="font-bold text-emerald-900">
+                  {signatureConfig?.instructorName ||
+                    generalInfo?.nombreInstructorLlamado ||
+                    generalInfo?.nombreInstructorAsignado ||
+                    '(Sin asignar)'}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span className="font-bold">Total Evidencias:</span>
+                <span className="font-black text-black">{evidences.length} evidencias configuradas</span>
+              </div>
+            </div>
+
+            {/* Scope Selection */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase text-black block">
+                Seleccione el alcance de aprendices a incluir:
+              </label>
+
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPdfScope('ALL')}
+                  className={`p-3 text-left border-2 border-black transition flex items-center justify-between ${
+                    pdfScope === 'ALL'
+                      ? 'bg-rose-50 border-rose-800 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                      : 'bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div>
+                    <span className="font-black text-xs uppercase block text-black">
+                      Planilla Completa Oficial ({apprentices.length} Aprendices Activos)
+                    </span>
+                    <span className="text-[11px] text-slate-600 block mt-0.5">
+                      Incluye la totalidad de aprendices matriculados en la ficha.
+                    </span>
+                  </div>
+                  {pdfScope === 'ALL' && <CheckCircle2 className="h-5 w-5 text-rose-700 shrink-0" />}
+                </button>
+
+                {(searchTerm.trim() || statusFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => setPdfScope('FILTERED')}
+                    className={`p-3 text-left border-2 border-black transition flex items-center justify-between ${
+                      pdfScope === 'FILTERED'
+                        ? 'bg-rose-50 border-rose-800 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                        : 'bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div>
+                      <span className="font-black text-xs uppercase block text-black">
+                        Vista Filtrada Actual ({displayedApprentices.length} Aprendices)
+                      </span>
+                      <span className="text-[11px] text-slate-600 block mt-0.5">
+                        Solo los aprendices que coinciden con la búsqueda o filtro activo.
+                      </span>
+                    </div>
+                    {pdfScope === 'FILTERED' && <CheckCircle2 className="h-5 w-5 text-rose-700 shrink-0" />}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Checkbox Options */}
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={pdfIncludeConventions}
+                  onChange={(e) => setPdfIncludeConventions(e.target.checked)}
+                  className="h-4 w-4 rounded border-2 border-black text-rose-600 focus:ring-0"
+                />
+                <span>Incluir tabla de Convenciones y Resultados de Aprendizaje (RAPs) al pie</span>
+              </label>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-3 border-t-2 border-black flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPdfModalOpen(false)}
+                className="px-4 py-2 text-xs font-black uppercase bg-slate-100 hover:bg-slate-200 text-black border-2 border-black transition"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDownloadPlanillaPdf(pdfScope)}
+                disabled={isExportingPdf}
+                className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase bg-rose-500 hover:bg-rose-600 text-white border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition disabled:opacity-50"
+              >
+                {isExportingPdf ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>Generando PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    <span>Descargar PDF Ahora</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
