@@ -168,6 +168,25 @@ export async function parseExcelMatrix(
     }) || workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
 
+  // Recalculate worksheet boundary from actual cell keys in case !ref was truncated or stale
+  let minR = Infinity, maxR = -1, minC = Infinity, maxC = -1;
+  for (const key of Object.keys(worksheet || {})) {
+    if (key.startsWith('!')) continue;
+    try {
+      const cell = XLSX.utils.decode_cell(key);
+      if (cell.r < minR) minR = cell.r;
+      if (cell.r > maxR) maxR = cell.r;
+      if (cell.c < minC) minC = cell.c;
+      if (cell.c > maxC) maxC = cell.c;
+    } catch {}
+  }
+  if (maxR >= 0 && maxC >= 0) {
+    worksheet['!ref'] = XLSX.utils.encode_range({
+      s: { r: minR === Infinity ? 0 : minR, c: minC === Infinity ? 0 : minC },
+      e: { r: maxR, c: maxC }
+    });
+  }
+
   // Convert to raw array of rows
   const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
 
@@ -215,7 +234,12 @@ export async function parseExcelMatrix(
     }
   }
 
-  const headerRow = rawRows[headerRowIndex] || [];
+  // Total columns spanning the entire worksheet, not just the header row
+  const totalCols = Math.max(
+    maxC >= 0 ? maxC + 1 : 0,
+    ...rawRows.map((r) => (Array.isArray(r) ? r.length : 0))
+  );
+
   const columnMappings: ColumnMapping[] = [];
   const detectedEvidenceColumns: ParsedExcelResult['detectedEvidenceColumns'] = [];
   const unmappedEvidenceColumns: string[] = [];
@@ -228,7 +252,7 @@ export async function parseExcelMatrix(
   const doesColumnHaveEvaluationValues = (colIdx: number): boolean => {
     let evalCount = 0;
     let nonEmptyCount = 0;
-    const sampleLimit = Math.min(rawRows.length, headerRowIndex + 35);
+    const sampleLimit = Math.min(rawRows.length, headerRowIndex + 50);
     for (let r = headerRowIndex + 1; r < sampleLimit; r++) {
       const row = rawRows[r];
       if (!Array.isArray(row)) continue;
@@ -240,130 +264,89 @@ export async function parseExcelMatrix(
       const normVal = normalizeText(str).toUpperCase();
       if (
         normVal === 'SI' ||
+        normVal === 'SÍ' ||
+        normVal === 'S' ||
+        normVal === 'YES' ||
         normVal === 'NO' ||
+        normVal === 'N' ||
         normVal === 'CORREGIR' ||
+        normVal === 'CORRIGE' ||
+        normVal === 'AJUSTAR' ||
         normVal === '-' ||
         normVal === 'A' ||
         normVal === 'D' ||
         normVal === 'APROBADO' ||
         normVal === 'APROBADA' ||
         normVal === 'APROBO' ||
+        normVal === 'APROBÓ' ||
         normVal === 'NO APROBADO' ||
+        normVal === 'NO APROBADA' ||
+        normVal === 'NO APROBO' ||
+        normVal === 'DEFICIENTE' ||
         normVal === 'PENDIENTE' ||
+        normVal === 'FALTA' ||
         normVal === 'CUMPLE' ||
         normVal === 'NO CUMPLE' ||
         normVal === 'ENTREGADO' ||
+        normVal === 'ENTREGADA' ||
         normVal === 'ENTREGO' ||
+        normVal === 'ENTREGÓ' ||
+        normVal === 'NO ENTREGO' ||
+        normVal === 'NO ENTREGÓ' ||
+        normVal === 'SIN ENTREGAR' ||
+        normVal === 'PRESENTO' ||
+        normVal === 'NO PRESENTO' ||
         normVal === 'C' ||
         normVal === 'NA' ||
+        normVal === 'N/A' ||
         normVal === '1' ||
-        normVal === '0'
+        normVal === '0' ||
+        normVal === '✓' ||
+        normVal === '✔' ||
+        normVal === 'X' ||
+        /^\d{1,3}(?:\.\d+)?%?$/.test(normVal)
       ) {
         evalCount++;
       }
     }
-    return nonEmptyCount >= 2 && evalCount / nonEmptyCount >= 0.35;
+    return evalCount >= 1 && (evalCount / Math.max(1, nonEmptyCount) >= 0.25 || nonEmptyCount <= 5);
   };
 
-  // Match columns
-  headerRow.forEach((colVal, colIndex) => {
-    let headerStr = String(colVal || '').trim();
-    // Remove surrounding quotes if any (e.g. '"Evidencia GA2..."' or '""')
+  // Track already found apprentice identification columns so they cannot be hijacked by evidence titles
+  let hasFoundDocumento = false;
+  let hasFoundNombre = false;
+  let hasFoundCorreo = false;
+  let hasFoundTelefono = false;
+
+  // Inspect every column index from 0 to totalCols - 1
+  for (let colIndex = 0; colIndex < totalCols; colIndex++) {
+    // 1. Get header text from headerRowIndex, or search adjacent candidate header rows if blank
+    let headerStr = String(rawRows[headerRowIndex]?.[colIndex] || '').trim();
+    if (!headerStr) {
+      for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
+        const altStr = String(rawRows[r]?.[colIndex] || '').trim();
+        if (altStr) {
+          headerStr = altStr;
+          break;
+        }
+      }
+    }
+
+    // Clean surrounding quotes
     headerStr = headerStr.replace(/^["'\s]+|["'\s]+$/g, '').trim();
     const norm = normalizeText(headerStr);
 
-    if (!headerStr) {
-      columnMappings.push({ colIndex, headerName: `Columna ${colIndex + 1}`, type: 'ignore' });
-      return;
-    }
-
-    // Check Document
-    if (
-      norm.includes('documento') ||
-      norm.includes('cedula') ||
-      norm.includes('identificacion') ||
-      norm === 'doc' ||
-      norm === 'cc' ||
-      norm === 'ti' ||
-      norm === 'id' ||
-      norm === 'dni' ||
-      norm.includes('num_doc') ||
-      norm.includes('numero de documento')
-    ) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'documento' });
-      return;
-    }
-
-    // Check Name
-    if (
-      (norm.includes('nombre') ||
-      norm.includes('aprendiz') ||
-      norm.includes('estudiante') ||
-      norm.includes('alumno') ||
-      norm.includes('nombres y apellidos') ||
-      norm === 'nombre' ||
-      norm === 'nombres' ||
-      norm === 'apellidos y nombres') &&
-      !norm.includes('archivo') &&
-      !norm.includes('programa')
-    ) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'nombre' });
-      return;
-    }
-
-    // Check Email
-    if (norm.includes('correo') || norm.includes('email') || norm.includes('mail') || norm.includes('misena')) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'correo' });
-      return;
-    }
-
-    // Check Phone
-    if (norm.includes('telefono') || norm.includes('celular') || norm.includes('tel') || norm.includes('movil') || norm.includes('phone')) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'telefono' });
-      return;
-    }
-
-    // Check Item/Row Sequence index (#, N°, No, Consecutivo)
-    if (
-      norm === 'item' ||
-      norm === 'no' ||
-      norm === 'no.' ||
-      norm === 'n' ||
-      norm === 'n°' ||
-      norm === 'num' ||
-      norm === 'fila' ||
-      norm === 'consecutivo' ||
-      (norm === '#' && colIndex === 0)
-    ) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
-      return;
-    }
-
-    // Check Summary columns (Totals, percentages, judgment, observations)
-    if (
-      norm.includes('total si') ||
-      norm.includes('total no') ||
-      norm.includes('total corregir') ||
-      norm.includes('total aprobado') ||
-      norm.includes('pendientes') ||
-      norm.includes('porcentaje') ||
-      norm.includes('% avance') ||
-      norm.includes('juicio') ||
-      norm.includes('observaciones especificas')
-    ) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
-      return;
-    }
-
-    // Now, check Evidence column:
-    // Try by number: e.g. "#1 - ...", "#1", "1 - ...", "1. ...", "Evidencia 1", "E1", "EV01", or exact number
+    // Check evidence identifiers FIRST so that an evidence titled "Documento escrito", "Correo formal", etc.
+    // is never misclassified as an apprentice identification column!
     const numMatch =
-      headerStr.match(/^(?:#|\b)?\s*(\d+)\s*[-.:\)]/i) ||
-      headerStr.match(/(?:evidencia|evid|ev|e|#)\s*(\d+)/i) ||
-      headerStr.match(/^(\d+)$/);
+      headerStr.match(/^(?:#|\b)?\s*(\d{1,2})\s*[-.:\)]/i) ||
+      headerStr.match(/\b(?:evidencia|evid|ev|actividad|act|rap|aa|e|#)\s*[-.:]?\s*(\d{1,2})\b/i) ||
+      headerStr.match(/\b(\d{1,2})\s*(?:evidencia|evid|ev|actividad)\b/i) ||
+      headerStr.match(/^(\d{1,2})$/);
 
     const hasEvidenceKeywords =
       norm.includes('evidencia') ||
+      norm.includes('escrito') || // "Documento escrito" is an evidence!
       norm.startsWith('ev') ||
       norm.startsWith('aa') ||
       norm.startsWith('rap') ||
@@ -387,22 +370,144 @@ export async function parseExcelMatrix(
       norm.includes('presentacion') ||
       norm.includes('infografia') ||
       norm.includes('bitacora') ||
-      norm.includes('estudio de caso');
+      norm.includes('estudio de caso') ||
+      norm.includes('actividad') ||
+      norm.includes('evaluacion') ||
+      norm.includes('desempeno') ||
+      norm.includes('producto') ||
+      norm.includes('conocimiento');
 
+    const isEvidenceHeader = Boolean(numMatch) || hasEvidenceKeywords;
+
+    // Check Document (only if NOT an evidence header, and only once)
+    if (
+      !hasFoundDocumento &&
+      !isEvidenceHeader &&
+      (norm === 'documento' ||
+        norm === 'doc' ||
+        norm === 'cedula' ||
+        norm === 'identificacion' ||
+        norm === 'cc' ||
+        norm === 'ti' ||
+        norm === 'id' ||
+        norm === 'dni' ||
+        norm.includes('num_doc') ||
+        norm.includes('numero de documento') ||
+        norm.includes('documento de identidad'))
+    ) {
+      hasFoundDocumento = true;
+      columnMappings.push({ colIndex, headerName: headerStr || 'Documento', type: 'documento' });
+      continue;
+    }
+
+    // Check Name (only if NOT an evidence header, and only once)
+    if (
+      !hasFoundNombre &&
+      !isEvidenceHeader &&
+      (norm.includes('nombre') ||
+        norm.includes('aprendiz') ||
+        norm.includes('estudiante') ||
+        norm.includes('alumno') ||
+        norm.includes('nombres y apellidos') ||
+        norm === 'nombre' ||
+        norm === 'nombres' ||
+        norm === 'apellidos y nombres') &&
+      !norm.includes('archivo') &&
+      !norm.includes('programa')
+    ) {
+      hasFoundNombre = true;
+      columnMappings.push({ colIndex, headerName: headerStr || 'Nombre del Aprendiz', type: 'nombre' });
+      continue;
+    }
+
+    // Check Email (only if NOT an evidence header, and only once)
+    if (
+      !hasFoundCorreo &&
+      !isEvidenceHeader &&
+      (norm.includes('correo') || norm.includes('email') || norm.includes('mail') || norm.includes('misena'))
+    ) {
+      hasFoundCorreo = true;
+      columnMappings.push({ colIndex, headerName: headerStr || 'Correo', type: 'correo' });
+      continue;
+    }
+
+    // Check Phone (only if NOT an evidence header, and only once)
+    if (
+      !hasFoundTelefono &&
+      !isEvidenceHeader &&
+      (norm.includes('telefono') || norm.includes('celular') || norm.includes('tel') || norm.includes('movil') || norm.includes('phone'))
+    ) {
+      hasFoundTelefono = true;
+      columnMappings.push({ colIndex, headerName: headerStr || 'Teléfono', type: 'telefono' });
+      continue;
+    }
+
+    // Check Item/Row Sequence index (#, N°, No, Consecutivo) at first column
+    if (
+      (colIndex === 0 || colIndex === 1) &&
+      (norm === 'item' ||
+        norm === 'no' ||
+        norm === 'no.' ||
+        norm === 'n' ||
+        norm === 'n°' ||
+        norm === 'num' ||
+        norm === 'fila' ||
+        norm === 'consecutivo' ||
+        norm === '#')
+    ) {
+      columnMappings.push({ colIndex, headerName: headerStr || 'Item', type: 'ignore' });
+      continue;
+    }
+
+    // Check Summary columns (Totals, percentages, judgment)
+    if (
+      norm.includes('total si') ||
+      norm.includes('total no') ||
+      norm.includes('total corregir') ||
+      norm.includes('total aprobado') ||
+      norm.includes('total d') ||
+      norm.includes('total a') ||
+      norm.includes('pendientes') ||
+      norm.includes('porcentaje') ||
+      norm.includes('% avance') ||
+      norm.includes('juicio evaluativo') ||
+      norm.includes('juicio definitivo')
+    ) {
+      columnMappings.push({ colIndex, headerName: headerStr || 'Total', type: 'ignore' });
+      continue;
+    }
+
+    // Evaluation data check
     const hasEvaluationData = doesColumnHaveEvaluationValues(colIndex);
 
-    const isEvidenceCol = Boolean(numMatch) || hasEvidenceKeywords || hasEvaluationData;
+    // Any column after personal data with values or keywords is an evidence column
+    const isAfterInfoCols = colIndex >= 3;
+    const isEvidenceCol =
+      Boolean(numMatch) ||
+      hasEvidenceKeywords ||
+      hasEvaluationData ||
+      (isAfterInfoCols && !norm.includes('observacion'));
 
     if (!isEvidenceCol) {
-      columnMappings.push({ colIndex, headerName: headerStr, type: 'ignore' });
-      return;
+      columnMappings.push({ colIndex, headerName: headerStr || `Columna ${colIndex + 1}`, type: 'ignore' });
+      continue;
+    }
+
+    // Fallback display header if column was blank
+    if (!headerStr) {
+      const allNums = [
+        ...currentEvidences.map((e) => e.numero),
+        ...newEvidencesCreated.map((e) => e.numero)
+      ];
+      const fallbackNum = (allNums.length > 0 ? Math.max(...allNums) : 0) + 1;
+      headerStr = `Evidencia ${fallbackNum}`;
     }
 
     // Evidence Column Identified!
     let matchedEvidence: EvidenceItem | undefined;
     let isNewEvidence = false;
 
-    // 1. Try matching by evidence number against currentEvidences
+    // 1. Try matching by explicit evidence number against currentEvidences
     if (numMatch) {
       const evNum = parseInt(numMatch[1], 10);
       matchedEvidence = currentEvidences.find((e) => e.numero === evNum && !claimedExistingIds.has(e.id));
@@ -433,7 +538,7 @@ export async function parseExcelMatrix(
       matchedEvidence = currentEvidences.find((e) => !claimedExistingIds.has(e.id));
     }
 
-    // 5. IF NOT MATCHED to existing evidences (e.g. Evidence #9, or new evidence uploaded in the Excel):
+    // 5. IF NOT MATCHED to existing evidences (e.g. Evidence #9, #10, or new evidence uploaded in the Excel):
     // DYNAMICALLY CREATE A NEW EVIDENCE ITEM!
     if (!matchedEvidence) {
       isNewEvidence = true;
@@ -508,11 +613,11 @@ export async function parseExcelMatrix(
       evidenceNombre: matchedEvidence.nombre,
       isNew: isNewEvidence
     });
-  });
+  }
 
   // If no name column detected, pick first non-empty column
   let nameCol = columnMappings.find((c) => c.type === 'nombre');
-  if (!nameCol && headerRow.length > 0) {
+  if (!nameCol && columnMappings.length > 0) {
     const firstCol = columnMappings[0];
     if (firstCol) firstCol.type = 'nombre';
   }

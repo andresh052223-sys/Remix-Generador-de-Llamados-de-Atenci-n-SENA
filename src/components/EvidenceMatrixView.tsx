@@ -33,7 +33,8 @@ import {
   Award,
   FileDown,
   Printer,
-  ChevronDown
+  ChevronDown,
+  Sliders
 } from 'lucide-react';
 
 interface EvidenceMatrixViewProps {
@@ -66,6 +67,7 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
   // Excel upload
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [excelResult, setExcelResult] = useState<ParsedExcelResult | null>(null);
+  const [preferredEvidenceCount, setPreferredEvidenceCount] = useState<'ALL' | number>('ALL');
   const [isUploading, setIsUploading] = useState(false);
   const [isNameFormatModalOpen, setIsNameFormatModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
@@ -497,17 +499,44 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
               <span>Descargar Matriz Excel</span>
             </button>
 
-            <button
-              id="matrix-upload-excel-btn"
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-emerald-400 hover:bg-emerald-500 text-black border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition"
-              title="Cargar y sincronizar archivo Excel editado con las calificaciones"
-            >
-              <Upload className="h-4 w-4" />
-              <span>{isUploading ? 'Leyendo Excel...' : 'Cargar / Actualizar Excel'}</span>
-            </button>
+            {/* Upload Excel Button with Evidence Count Option */}
+            <div className="flex items-stretch border-2 border-black bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border-r-2 border-black"
+                title="Seleccione cuántas evidencias desea mapear de forma predeterminada al cargar el archivo Excel"
+              >
+                <Sliders className="h-3.5 w-3.5 text-emerald-800 shrink-0" />
+                <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider hidden sm:inline">
+                  Mapear:
+                </span>
+                <select
+                  value={preferredEvidenceCount}
+                  onChange={(e) =>
+                    setPreferredEvidenceCount(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))
+                  }
+                  className="text-[11px] font-black bg-white text-black border border-black px-1.5 py-1 focus:outline-none cursor-pointer"
+                  title="Número de evidencias a mapear desde el archivo Excel"
+                >
+                  <option value="ALL">Todas las detectadas</option>
+                  <option value="8">8 Evidencias</option>
+                  <option value="9">9 Evidencias</option>
+                  <option value="10">10 Evidencias</option>
+                  <option value="12">12 Evidencias</option>
+                </select>
+              </div>
+
+              <button
+                id="matrix-upload-excel-btn"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black uppercase tracking-wider bg-emerald-400 hover:bg-emerald-500 text-black active:translate-x-[1px] active:translate-y-[1px] transition"
+                title="Cargar y sincronizar archivo Excel editado con las calificaciones"
+              >
+                <Upload className="h-4 w-4" />
+                <span>{isUploading ? 'Leyendo Excel...' : 'Cargar / Actualizar Excel'}</span>
+              </button>
+            </div>
 
             {/* Sort by Last Names */}
             <button
@@ -1243,6 +1272,7 @@ export const EvidenceMatrixView: React.FC<EvidenceMatrixViewProps> = ({
         result={excelResult}
         currentEvidences={evidences}
         existingApprentices={apprentices}
+        initialEvidenceCount={preferredEvidenceCount === 'ALL' ? undefined : preferredEvidenceCount}
         onConfirm={(updatedApps, _mode, updatedEvs) => {
           setApprentices(updatedApps);
           if (updatedEvs && updatedEvs.length > 0) {

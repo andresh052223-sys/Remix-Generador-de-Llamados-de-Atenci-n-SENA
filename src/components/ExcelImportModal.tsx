@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Apprentice, EvidenceItem } from '../types';
 import { ParsedExcelResult } from '../utils/excelParser';
 import {
@@ -13,7 +13,9 @@ import {
   RefreshCw,
   PlusCircle,
   Sparkles,
-  Search
+  Search,
+  Sliders,
+  Filter
 } from 'lucide-react';
 
 interface ExcelImportModalProps {
@@ -22,6 +24,7 @@ interface ExcelImportModalProps {
   result: ParsedExcelResult | null;
   currentEvidences: EvidenceItem[];
   existingApprentices: Apprentice[];
+  initialEvidenceCount?: number;
   onConfirm: (
     updatedApprentices: Apprentice[],
     mode: 'update_existing' | 'replace_all',
@@ -35,10 +38,23 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   result,
   currentEvidences,
   existingApprentices,
+  initialEvidenceCount,
   onConfirm
 }) => {
   const [importMode, setImportMode] = useState<'update_existing' | 'replace_all'>('update_existing');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (result?.detectedEvidenceColumns) {
+      if (initialEvidenceCount && initialEvidenceCount > 0) {
+        const clamped = Math.min(result.detectedEvidenceColumns.length, initialEvidenceCount);
+        setSelectedEvidenceIds(result.detectedEvidenceColumns.slice(0, clamped).map((c) => c.evidenceId));
+      } else {
+        setSelectedEvidenceIds(result.detectedEvidenceColumns.map((c) => c.evidenceId));
+      }
+    }
+  }, [result, initialEvidenceCount]);
 
   if (!isOpen || !result) return null;
 
@@ -51,13 +67,47 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     summary
   } = result;
 
+  const handleSetEvidenceCount = (count: number) => {
+    if (!detectedEvidenceColumns) return;
+    const clamped = Math.max(0, Math.min(detectedEvidenceColumns.length, count));
+    setSelectedEvidenceIds(detectedEvidenceColumns.slice(0, clamped).map((c) => c.evidenceId));
+  };
+
+  const handleToggleEvidence = (evidenceId: string) => {
+    setSelectedEvidenceIds((prev) =>
+      prev.includes(evidenceId) ? prev.filter((id) => id !== evidenceId) : [...prev, evidenceId]
+    );
+  };
+
+  const handleSelectAllEvidences = () => {
+    setSelectedEvidenceIds(detectedEvidenceColumns.map((c) => c.evidenceId));
+  };
+
+  const handleDeselectAllEvidences = () => {
+    setSelectedEvidenceIds([]);
+  };
+
   const handleApply = () => {
+    if (selectedEvidenceIds.length === 0) return;
+
     let finalApprentices: Apprentice[] = [];
+    const activeEvidenceIdSet = new Set(selectedEvidenceIds);
+
+    // Filter apprentice evidence status to ONLY include selected evidence IDs
+    const filterStatuses = (statusMap: Record<string, any>) => {
+      const filtered: Record<string, any> = {};
+      Object.entries(statusMap || {}).forEach(([evId, val]) => {
+        if (activeEvidenceIdSet.has(evId)) {
+          filtered[evId] = val;
+        }
+      });
+      return filtered;
+    };
 
     if (importMode === 'update_existing') {
       // Create maps of parsed apprentices by cleaned doc and normalized name
-      const parsedByDoc = new Map<string, typeof parsedApps[0]>();
-      const parsedByName = new Map<string, typeof parsedApps[0]>();
+      const parsedByDoc = new Map<string, (typeof parsedApps)[0]>();
+      const parsedByName = new Map<string, (typeof parsedApps)[0]>();
 
       parsedApps.forEach((p) => {
         if (p.documento) {
@@ -82,6 +132,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
         if (match) {
           updatedExistingIds.add(match.id);
+          const mappedFromExcel = filterStatuses(match.evidenciasStatus);
           return {
             ...existing,
             documento: existing.documento || match.documento,
@@ -89,7 +140,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             telefono: existing.telefono || match.telefono,
             evidenciasStatus: {
               ...(existing.evidenciasStatus || {}),
-              ...match.evidenciasStatus
+              ...mappedFromExcel
             }
           };
         }
@@ -105,7 +156,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           documento: p.documento || '',
           correo: p.correo,
           telefono: p.telefono || '',
-          evidenciasStatus: p.evidenciasStatus,
+          evidenciasStatus: filterStatuses(p.evidenciasStatus),
           observacionesEspecificas: '',
           juicioEspecifico: 'NO_APROBO' as const
         }));
@@ -119,14 +170,42 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         documento: p.documento || '',
         correo: p.correo,
         telefono: p.telefono || '',
-        evidenciasStatus: p.evidenciasStatus,
+        evidenciasStatus: filterStatuses(p.evidenciasStatus),
         observacionesEspecificas: '',
         juicioEspecifico: 'NO_APROBO' as const
       }));
     }
 
-    onConfirm(finalApprentices, importMode, result.updatedEvidences || currentEvidences);
+    // Determine final evidences:
+    // Retain existing evidences, and only add new evidences that were selected for mapping
+    const finalEvidences = [...currentEvidences];
+    (result.newEvidencesFound || []).forEach((ne) => {
+      if (activeEvidenceIdSet.has(ne.id) && !finalEvidences.some((e) => e.id === ne.id)) {
+        finalEvidences.push(ne);
+      }
+    });
+    finalEvidences.sort((a, b) => a.numero - b.numero);
+
+    onConfirm(finalApprentices, importMode, finalEvidences);
     onClose();
+  };
+
+  // Calculate live preview counts based ONLY on the chosen evidences
+  const getApprenticeEvidenceStats = (evidenciasStatus: Record<string, any>) => {
+    let si = 0;
+    let no = 0;
+    let corregir = 0;
+    let na = 0;
+
+    selectedEvidenceIds.forEach((evId) => {
+      const st = evidenciasStatus[evId];
+      if (st === 'SI') si++;
+      else if (st === 'NO') no++;
+      else if (st === 'CORREGIR') corregir++;
+      else if (st === '-') na++;
+    });
+
+    return { si, no, corregir, na };
   };
 
   const filteredPreview = parsedApps.filter((a) => {
@@ -227,37 +306,170 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             </div>
           )}
 
-          {/* Evidence Columns Found Badge List */}
+          {/* Evidence Count Selection Section */}
           {detectedEvidenceColumns.length > 0 && (
-            <div className="bg-emerald-50 border-2 border-black p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-black flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                  Columnas de Evidencias Reconocidas ({detectedEvidenceColumns.length}):
-                </span>
-                {result.newEvidencesFound && result.newEvidencesFound.length > 0 && (
-                  <span className="text-[9px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 tracking-wider">
-                    +{result.newEvidencesFound.length} nueva(s) agregada(s)
+            <div className="bg-emerald-50 border-2 border-black p-4 space-y-3.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-emerald-200">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Sliders className="h-4 w-4 text-emerald-800" />
+                    <span className="text-xs font-black uppercase tracking-wider text-black">
+                      Número de Evidencias a Mapear:
+                    </span>
+                    <span className="bg-emerald-600 text-white font-mono text-[10px] font-black px-2 py-0.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+                      {selectedEvidenceIds.length} de {detectedEvidenceColumns.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-700 font-medium mt-0.5">
+                    Ajuste la cantidad de evidencias que desea mapear desde el archivo Excel para actualizar la matriz.
+                  </p>
+                </div>
+
+                {/* Stepper Control for Evidence Count */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <button
+                      type="button"
+                      onClick={() => handleSetEvidenceCount(Math.max(1, selectedEvidenceIds.length - 1))}
+                      disabled={selectedEvidenceIds.length <= 1}
+                      className="px-3 py-1 font-mono font-black text-sm hover:bg-slate-100 disabled:opacity-30 border-r border-black transition"
+                      title="Mapear una evidencia menos"
+                    >
+                      -
+                    </button>
+                    <div className="px-3 py-1 font-mono font-black text-sm text-black min-w-[2.75rem] text-center bg-emerald-50">
+                      {selectedEvidenceIds.length}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSetEvidenceCount(Math.min(detectedEvidenceColumns.length, selectedEvidenceIds.length + 1))}
+                      disabled={selectedEvidenceIds.length >= detectedEvidenceColumns.length}
+                      className="px-3 py-1 font-mono font-black text-sm hover:bg-slate-100 disabled:opacity-30 border-l border-black transition"
+                      title="Mapear una evidencia más"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="text-[10px] font-black text-slate-600 uppercase">
+                    / {detectedEvidenceColumns.length} detectadas
                   </span>
-                )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-                {detectedEvidenceColumns.map((col, idx) => (
-                  <span
-                    key={idx}
-                    className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
-                      col.isNew ? 'bg-emerald-200 text-emerald-950 border-emerald-800' : 'bg-white text-black'
+
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-slate-700">Preajustes rápidos:</span>
+                {detectedEvidenceColumns.length >= 8 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetEvidenceCount(8)}
+                    className={`px-3 py-1 text-[11px] font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition ${
+                      selectedEvidenceIds.length === 8
+                        ? 'bg-emerald-400 text-black font-black'
+                        : 'bg-white hover:bg-slate-100 text-slate-800'
                     }`}
                   >
-                    <span className="font-black font-mono text-emerald-700">#{col.evidenceNumero}</span>
-                    <span className="truncate max-w-[150px]">{col.evidenceNombre}</span>
-                    {col.isNew && (
-                      <span className="px-1 py-0.2 bg-emerald-700 text-white text-[8px] font-black uppercase tracking-wider">
-                        NUEVA
-                      </span>
-                    )}
+                    8 Evidencias
+                  </button>
+                )}
+                {detectedEvidenceColumns.length >= 9 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetEvidenceCount(9)}
+                    className={`px-3 py-1 text-[11px] font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition ${
+                      selectedEvidenceIds.length === 9
+                        ? 'bg-emerald-400 text-black font-black'
+                        : 'bg-white hover:bg-slate-100 text-slate-800'
+                    }`}
+                  >
+                    9 Evidencias
+                  </button>
+                )}
+                {detectedEvidenceColumns.length >= 10 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetEvidenceCount(10)}
+                    className={`px-3 py-1 text-[11px] font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition ${
+                      selectedEvidenceIds.length === 10
+                        ? 'bg-emerald-400 text-black font-black'
+                        : 'bg-white hover:bg-slate-100 text-slate-800'
+                    }`}
+                  >
+                    10 Evidencias
+                  </button>
+                )}
+                {detectedEvidenceColumns.length >= 12 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetEvidenceCount(12)}
+                    className={`px-3 py-1 text-[11px] font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition ${
+                      selectedEvidenceIds.length === 12
+                        ? 'bg-emerald-400 text-black font-black'
+                        : 'bg-white hover:bg-slate-100 text-slate-800'
+                    }`}
+                  >
+                    12 Evidencias
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSelectAllEvidences}
+                  className={`px-3 py-1 text-[11px] font-black uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition ${
+                    selectedEvidenceIds.length === detectedEvidenceColumns.length
+                      ? 'bg-emerald-400 text-black font-black'
+                      : 'bg-white hover:bg-slate-100 text-slate-800'
+                  }`}
+                >
+                  Todas ({detectedEvidenceColumns.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeselectAllEvidences}
+                  className="px-2 py-1 text-[10px] font-bold uppercase text-slate-600 hover:text-black underline ml-auto"
+                >
+                  Deseleccionar todas
+                </button>
+              </div>
+
+              {/* Interactive Evidence Chips / Checkboxes */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-black flex items-center justify-between">
+                  <span>Selección detallada de columnas reconocidas:</span>
+                  <span className="text-slate-600 font-bold text-[9px]">
+                    (Haga clic sobre una evidencia para activarla o desactivarla)
                   </span>
-                ))}
+                </span>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-white border-2 border-black shadow-[inset_1px_1px_2px_rgba(0,0,0,0.1)]">
+                  {detectedEvidenceColumns.map((col, idx) => {
+                    const isSelected = selectedEvidenceIds.includes(col.evidenceId);
+                    return (
+                      <label
+                        key={idx}
+                        className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 border-2 cursor-pointer select-none transition ${
+                          isSelected
+                            ? col.isNew
+                              ? 'bg-emerald-200 text-emerald-950 border-emerald-800 shadow-[1px_1px_0px_0px_rgba(4,120,87,1)]'
+                              : 'bg-emerald-100 text-black border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                            : 'bg-slate-100 text-slate-400 border-slate-300 line-through opacity-60'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleEvidence(col.evidenceId)}
+                          className="accent-black h-3.5 w-3.5"
+                        />
+                        <span className="font-black font-mono text-emerald-800">#{col.evidenceNumero}</span>
+                        <span className="truncate max-w-[140px]">{col.evidenceNombre}</span>
+                        {col.isNew && (
+                          <span className="px-1 py-0.2 bg-emerald-700 text-white text-[8px] font-black uppercase tracking-wider">
+                            NUEVA
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -288,7 +500,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     Actualizar Estados de Aprendices
                   </div>
                   <div className="text-[11px] font-medium text-slate-700 mt-0.5">
-                    Modifica los estados de evidencias para los aprendices existentes y añade nuevos si los hay.
+                    Modifica los estados de las {selectedEvidenceIds.length} evidencias seleccionadas para los aprendices existentes.
                   </div>
                 </div>
               </label>
@@ -313,18 +525,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     Reemplazar Lista Completa
                   </div>
                   <div className="text-[11px] font-medium text-slate-700 mt-0.5">
-                    Sustituye la lista actual con los {summary.totalApprentices} aprendices del archivo Excel.
+                    Sustituye la lista actual con los {summary.totalApprentices} aprendices y las {selectedEvidenceIds.length} evidencias seleccionadas.
                   </div>
                 </div>
               </label>
             </div>
           </div>
 
-          {/* Apprentice Preview with Evidences Count */}
+          {/* Apprentice Preview with Dynamic Evidences Count */}
           <div className="border-2 border-black overflow-hidden bg-white">
             <div className="p-3 bg-black text-white flex items-center justify-between gap-2 flex-wrap">
               <span className="text-[10px] font-black uppercase tracking-wider">
-                Vista Previa de Aprendices y Estados ({parsedApps.length} registros)
+                Vista Previa de Aprendices con las {selectedEvidenceIds.length} Evidencias Seleccionadas ({parsedApps.length} registros)
               </span>
               <div className="relative w-48">
                 <Search className="h-3 w-3 absolute left-2.5 top-2 text-slate-400" />
@@ -339,62 +551,82 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             </div>
 
             <div className="max-h-60 overflow-y-auto divide-y divide-slate-200">
-              {filteredPreview.map((app, idx) => (
-                <div key={idx} className="p-2.5 flex items-center justify-between gap-3 text-xs hover:bg-slate-50">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-slate-900 uppercase truncate">
-                      {idx + 1}. {app.nombre}
+              {filteredPreview.map((app, idx) => {
+                const appStats = getApprenticeEvidenceStats(app.evidenciasStatus);
+                return (
+                  <div key={idx} className="p-2.5 flex items-center justify-between gap-3 text-xs hover:bg-slate-50">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-slate-900 uppercase truncate">
+                        {idx + 1}. {app.nombre}
+                      </div>
+                      <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                        {app.documento && <span>CC: {app.documento}</span>}
+                        {app.correo && <span className="truncate">{app.correo}</span>}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                      {app.documento && <span>CC: {app.documento}</span>}
-                      {app.correo && <span className="truncate">{app.correo}</span>}
-                    </div>
-                  </div>
 
-                  {/* Evidence Status Pill Summary */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5">
-                      {app.totalSi} SI
-                    </span>
-                    <span className="text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300 px-1.5 py-0.5">
-                      {app.totalNo} NO
-                    </span>
-                    {app.totalCorregir > 0 && (
-                      <span className="text-[9px] font-black uppercase bg-white text-black border border-black px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
-                        {app.totalCorregir} CORREGIR
+                    {/* Evidence Status Pill Summary for selected evidences */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5">
+                        {appStats.si} SI
                       </span>
-                    )}
-                    {app.totalNa > 0 && (
-                      <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-700 border border-slate-300 px-1.5 py-0.5">
-                        {app.totalNa} -
+                      <span className="text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300 px-1.5 py-0.5">
+                        {appStats.no} NO
                       </span>
-                    )}
+                      {appStats.corregir > 0 && (
+                        <span className="text-[9px] font-black uppercase bg-white text-black border border-black px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+                          {appStats.corregir} CORREGIR
+                        </span>
+                      )}
+                      {appStats.na > 0 && (
+                        <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-700 border border-slate-300 px-1.5 py-0.5">
+                          {appStats.na} -
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-slate-100 border-t-2 border-black flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-black uppercase text-black bg-white hover:bg-slate-200 border-2 border-black"
-          >
-            Cancelar
-          </button>
+        <div className="p-4 bg-slate-100 border-t-2 border-black flex flex-col sm:flex-row items-center justify-between gap-3">
+          {selectedEvidenceIds.length === 0 ? (
+            <div className="text-xs font-bold text-rose-600 flex items-center gap-1.5">
+              <AlertCircle className="h-4 w-4" />
+              <span>Debe seleccionar al menos 1 evidencia para mapear.</span>
+            </div>
+          ) : (
+            <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <span>Se mapearán <strong>{selectedEvidenceIds.length} evidencias</strong> en la matriz.</span>
+            </div>
+          )}
 
-          <button
-            id="confirm-excel-import-btn"
-            type="button"
-            onClick={handleApply}
-            className="flex items-center gap-2 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-black bg-emerald-400 hover:bg-emerald-500 border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
-          >
-            <Check className="h-4 w-4" />
-            <span>Aplicar Cambios de Evidencias ({parsedApps.length} Aprendices)</span>
-          </button>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-black uppercase text-black bg-white hover:bg-slate-200 border-2 border-black"
+            >
+              Cancelar
+            </button>
+
+            <button
+              id="confirm-excel-import-btn"
+              type="button"
+              onClick={handleApply}
+              disabled={selectedEvidenceIds.length === 0}
+              className="flex items-center gap-2 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-black bg-emerald-400 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+            >
+              <Check className="h-4 w-4" />
+              <span>
+                Aplicar {selectedEvidenceIds.length} Evidencias ({parsedApps.length} Aprendices)
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
